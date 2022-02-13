@@ -8,10 +8,36 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "APACHE-2.0",
   "devDependencies": {
     "@commitlint/cli": "^16.2.1",
     "@commitlint/config-conventional": "^16.2.1",
     "husky": "^7.0.0"
+  },
+  "commitlint": {
+    "extends": [
+      "@commitlint/config-conventional"
+    ],
+    "rules": {
+      "scope-enum": [
+        2,
+        "always",
+        [
+          "core",
+          "c",
+          "core",
+          "cpp",
+          "csharp",
+          "deno",
+          "go",
+          "java",
+          "node",
+          "php",
+          "python",
+          "ruby",
+          "rust"
+        ]
+      ]
+    }
   }
 }
