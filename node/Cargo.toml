@@ -1,0 +1,17 @@
+[package]
+name = "hfn-core"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[lib]
+path = "src-rs/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = "2"
+napi-derive = "2"
+hyper-function-core = { path = "../core" }
+
+[build-dependencies]
+napi-build = "1"

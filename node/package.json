@@ -1,0 +1,24 @@
+{
+  "name": "hfn",
+  "version": "0.1.0",
+  "description": "",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --external:../core --platform=node --outfile=dist/index.js --minify",
+    "build-watch": "npm run build -- --watch",
+    "core:build": "napi build --dts=core.d.ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "napi": {
+    "name": "core"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@napi-rs/cli": "^2.4.2",
+    "@types/node": "^17.0.17",
+    "esbuild": "^0.14.21",
+    "msgpackr": "1.5.4"
+  }
+}
