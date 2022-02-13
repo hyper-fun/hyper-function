@@ -1,4 +1,3 @@
-package fun.hyper;
 import java.lang.reflect.Method;
 
 /**

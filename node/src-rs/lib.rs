@@ -6,7 +6,5 @@ extern crate napi_derive;
 
 #[napi]
 pub fn init(buf: Buffer) -> Buffer {
-    hyper_function_core::init(buf.into());
-
-    Buffer::from(vec![0xab])
+    hyper_function_core::init(buf.into()).into()
 }

@@ -17,7 +17,7 @@ pub static INSTANCE: OnceCell<Instance> = OnceCell::new();
 
 static CHAN: Lazy<(Sender<u32>, Receiver<u32>)> = Lazy::new(|| channel::<u32>(100));
 
-pub fn init(opts: Vec<u8>) {
+pub fn init(opts: Vec<u8>) -> Vec<u8> {
     // currently we only support one instance
     if INSTANCE.get().is_some() {
         panic!("Instance already initialized");
@@ -40,8 +40,11 @@ pub fn init(opts: Vec<u8>) {
         panic!("hfn.json file not found: {}", config_path.display());
     }
 
-    let config =
+    let json_config =
         codec::JsonConfig::from_str(read_to_string(config_path).expect("failed to read hfn.json"));
+
+    let (hfn_packages, hfn_modules, hfn_models, hfn_hfns, hfn_rpcs, hfn_schemas, hfn_fields) =
+        json_config.to_hfn_struct();
 
     let mut runtime_builder = Builder::new_multi_thread();
 
@@ -54,4 +57,15 @@ pub fn init(opts: Vec<u8>) {
 
     let instance = Instance { runtime };
     INSTANCE.set(instance).expect("unable to set instance");
+
+    let result = codec::InitResult {
+        packages: hfn_packages,
+        modules: hfn_modules,
+        models: hfn_models,
+        hfns: hfn_hfns,
+        rpcs: hfn_rpcs,
+        schemas: hfn_schemas,
+        fields: hfn_fields,
+    };
+    result.to_buf()
 }
