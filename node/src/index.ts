@@ -30,6 +30,8 @@ export function run(
       })
     )
   );
+
+  core.run();
 }
 
 run([

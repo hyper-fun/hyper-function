@@ -8,3 +8,8 @@ extern crate napi_derive;
 pub fn init(buf: Buffer) -> Buffer {
     hyper_function_core::init(buf.into()).into()
 }
+
+#[napi]
+pub fn run() {
+    hyper_function_core::run();
+}

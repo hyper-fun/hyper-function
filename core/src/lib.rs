@@ -10,6 +10,8 @@ mod codec;
 
 #[derive(Debug)]
 pub struct Instance {
+    pub init_args: codec::InitArgs,
+    pub json_config: codec::JsonConfig,
     pub upstream_id: String,
     pub runtime: Runtime,
 }
@@ -30,8 +32,8 @@ pub fn init(args: Vec<u8>) -> Vec<u8> {
     if env::var("HFN_CONFIG_PATH").is_ok() {
         let path = env::var("HFN_CONFIG_PATH").unwrap();
         config_path = Path::new(&path).to_owned();
-    } else if let Some(hfn_config_path) = args.hfn_config_path {
-        config_path = Path::new(&hfn_config_path).to_owned();
+    } else if let Some(hfn_config_path) = &args.hfn_config_path {
+        config_path = Path::new(hfn_config_path).to_owned();
     } else {
         config_path = env::current_dir().unwrap();
         config_path.push("hfn.json");
@@ -46,27 +48,47 @@ pub fn init(args: Vec<u8>) -> Vec<u8> {
 
     let mut runtime_builder = Builder::new_multi_thread();
 
-    if let Some(tokio_work_threads) = args.tokio_work_threads {
-        runtime_builder.worker_threads(tokio_work_threads);
+    if let Some(tokio_work_threads) = &args.tokio_work_threads {
+        runtime_builder.worker_threads(*tokio_work_threads);
     }
 
     runtime_builder.thread_name("hfn-core-runtime-worker");
     runtime_builder.enable_all();
     let runtime = runtime_builder.build().expect("unable build tokio runtime");
 
-    let upstream_id = nanoid!();
+    let (hfn_packages, hfn_modules, hfn_models, hfn_hfns, hfn_rpcs, hfn_schemas, hfn_fields) =
+        json_config.to_hfn_struct();
 
+    let upstream_id = nanoid!();
     INSTANCE
         .set(Instance {
+            init_args: args,
+            json_config,
             runtime,
-            upstream_id,
+            upstream_id: upstream_id.clone(),
         })
         .expect("unable to set instance");
 
+    // let instance = INSTANCE.get().unwrap();
+
+    let result = codec::InitResult {
+        upstream_id,
+        packages: hfn_packages,
+        modules: hfn_modules,
+        models: hfn_models,
+        hfns: hfn_hfns,
+        rpcs: hfn_rpcs,
+        schemas: hfn_schemas,
+        fields: hfn_fields,
+    };
+    result.to_buf()
+}
+
+pub fn run() {
     let instance = INSTANCE.get().unwrap();
 
-    if args.dev {
-        let mut url = url::Url::parse(&json_config.dev.devtools).unwrap();
+    if instance.init_args.dev {
+        let mut url = url::Url::parse(&instance.json_config.dev.devtools).unwrap();
         url.set_path("/us");
 
         url.query_pairs_mut()
@@ -76,12 +98,13 @@ pub fn init(args: Vec<u8>) -> Vec<u8> {
             .append_pair("usid", &instance.upstream_id);
 
         url.query_pairs_mut()
-            .append_pair("appid", &json_config.appid);
+            .append_pair("appid", &instance.json_config.appid);
 
         url.query_pairs_mut()
             .append_pair("ver", env!("CARGO_PKG_VERSION"));
 
-        url.query_pairs_mut().append_pair("sdk", &args.sdk);
+        url.query_pairs_mut()
+            .append_pair("sdk", &instance.init_args.sdk);
 
         // todo add package signature for querystring
 
@@ -107,19 +130,4 @@ pub fn init(args: Vec<u8>) -> Vec<u8> {
             // todo handle close
         });
     }
-
-    let (hfn_packages, hfn_modules, hfn_models, hfn_hfns, hfn_rpcs, hfn_schemas, hfn_fields) =
-        json_config.to_hfn_struct();
-
-    let result = codec::InitResult {
-        upstream_id: instance.upstream_id.clone(),
-        packages: hfn_packages,
-        modules: hfn_modules,
-        models: hfn_models,
-        hfns: hfn_hfns,
-        rpcs: hfn_rpcs,
-        schemas: hfn_schemas,
-        fields: hfn_fields,
-    };
-    result.to_buf()
 }
