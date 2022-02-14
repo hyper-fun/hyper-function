@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Deserialize)]
 pub struct InitArgs {
     pub dev: bool,
+    pub sdk: String,
     pub pkg_names: Vec<String>,
     pub hfn_config_path: Option<String>,
     pub tokio_work_threads: Option<usize>,
@@ -23,6 +24,7 @@ impl InitArgs {
 
 #[derive(Debug, Serialize)]
 pub struct InitResult {
+    pub upstream_id: String,
     pub packages: Vec<HfnPackage>,
     pub modules: Vec<HfnModule>,
     pub models: Vec<HfnModel>,

@@ -2,6 +2,7 @@ import core from "../core";
 import { pack } from "msgpackr/pack";
 import { unpack } from "msgpackr/unpack";
 
+import pkg from "../package.json";
 import { HyperFunctionPackage } from "./package";
 
 interface RunOptions {
@@ -19,15 +20,16 @@ export function run(
   }
 
   const pkgNames = packages.map((pkg) => pkg.name.toLowerCase());
-  const resultBuffer = core.init(
-    pack({
-      dev: true,
-      hfn_config_path: "/Users/afei/Desktop/aefe/hfn.json",
-      pkg_names: pkgNames,
-    })
+  const result = unpack(
+    core.init(
+      pack({
+        dev: true,
+        sdk: "node--" + pkg.version,
+        hfn_config_path: "/Users/afei/Desktop/aefe/hfn.json",
+        pkg_names: pkgNames,
+      })
+    )
   );
-
-  console.log(unpack(resultBuffer));
 }
 
 run([
@@ -37,3 +39,5 @@ run([
     },
   ]),
 ]);
+
+setTimeout(() => {}, 10000000);
