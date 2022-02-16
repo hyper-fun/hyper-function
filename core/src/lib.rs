@@ -7,6 +7,7 @@ use tokio::runtime::{Builder, Runtime};
 use tokio_tungstenite::connect_async;
 
 mod codec;
+mod gateway;
 
 #[derive(Debug)]
 pub struct Instance {

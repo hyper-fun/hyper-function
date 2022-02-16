@@ -24,7 +24,7 @@ export function run(
     core.init(
       pack({
         dev: true,
-        sdk: "node--" + pkg.version,
+        sdk: "node-" + pkg.version,
         hfn_config_path: "/Users/afei/Desktop/aefe/hfn.json",
         pkg_names: pkgNames,
       })
