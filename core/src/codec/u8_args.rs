@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 pub struct InitArgs {
     pub dev: bool,
     pub sdk: String,
+    pub upstream_id: Option<String>,
     pub pkg_names: Vec<String>,
     pub hfn_config_path: Option<String>,
     pub tokio_work_threads: Option<usize>,
@@ -15,10 +16,8 @@ pub struct InitArgs {
 
 impl InitArgs {
     pub fn from_buf(data: Vec<u8>) -> Self {
-        let cur = Cursor::new(&data);
-        let mut de = rmp_serde::Deserializer::new(cur);
-        let opts: InitArgs = Deserialize::deserialize(&mut de).expect("failed to parse init args");
-        opts
+        let mut de = rmp_serde::Deserializer::new(Cursor::new(&data));
+        Deserialize::deserialize(&mut de).expect("failed to parse init args")
     }
 }
 

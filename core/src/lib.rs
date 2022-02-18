@@ -1,10 +1,9 @@
-use futures_util::StreamExt;
+use gateway::gateway::Gateway;
 use nanoid::nanoid;
 use std::{env, fs::read_to_string, path::Path};
 
 use once_cell::sync::OnceCell;
 use tokio::runtime::{Builder, Runtime};
-use tokio_tungstenite::connect_async;
 
 mod codec;
 mod gateway;
@@ -60,7 +59,13 @@ pub fn init(args: Vec<u8>) -> Vec<u8> {
     let (hfn_packages, hfn_modules, hfn_models, hfn_hfns, hfn_rpcs, hfn_schemas, hfn_fields) =
         json_config.to_hfn_struct();
 
-    let upstream_id = nanoid!();
+    let upstream_id;
+    if let Some(id) = &args.upstream_id {
+        upstream_id = id.to_owned();
+    } else {
+        upstream_id = nanoid!();
+    }
+
     INSTANCE
         .set(Instance {
             init_args: args,
@@ -73,7 +78,7 @@ pub fn init(args: Vec<u8>) -> Vec<u8> {
     // let instance = INSTANCE.get().unwrap();
 
     let result = codec::InitResult {
-        upstream_id,
+        upstream_id: upstream_id.clone(),
         packages: hfn_packages,
         modules: hfn_modules,
         models: hfn_models,
@@ -93,9 +98,6 @@ pub fn run() {
         url.set_path("/us");
 
         url.query_pairs_mut()
-            .append_pair("ts", &chrono::Utc::now().timestamp_millis().to_string());
-
-        url.query_pairs_mut()
             .append_pair("usid", &instance.upstream_id);
 
         url.query_pairs_mut()
@@ -107,28 +109,15 @@ pub fn run() {
         url.query_pairs_mut()
             .append_pair("sdk", &instance.init_args.sdk);
 
-        // todo add package signature for querystring
-
         instance.runtime.spawn(async move {
-            println!("connecting to devtools: {}", url.to_string());
-            let (mut stream, _) = connect_async(url)
-                .await
-                .expect("failed to connect to devtools");
+            let gateway = Gateway {
+                dev: true,
+                runway: url,
+            };
 
-            while let Some(msg) = stream.next().await {
-                if msg.is_err() {
-                    // TODO handle error
-                    continue;
-                }
-
-                let msg = msg.unwrap();
-
-                if msg.is_binary() {
-                    println!("get bin msg: {:?}", msg.into_data());
-                }
-            }
-
-            // todo handle close
+            gateway.connect().await
         });
+
+        // todo add package signature for querystring
     }
 }
