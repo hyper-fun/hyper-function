@@ -6,17 +6,6 @@ use tokio_tungstenite::{
     connect_async, tungstenite::error::Error, tungstenite::Message, MaybeTlsStream, WebSocketStream,
 };
 
-pub enum PacketType {
-    OPEN = 6,
-    CLOSE,
-    PING,
-    PONG,
-    RETRY,
-    REDIRECT,
-    MESSAGE,
-    ACK,
-}
-
 pub enum Packet {
     OPEN(PacketOpen),
     CLOSE(PacketClose),
@@ -36,14 +25,14 @@ pub struct PacketOpen {
 }
 
 pub struct PacketClose {
-    pub reason: Option<String>,
+    pub reason: String,
 }
 
 pub struct PacketPing {}
 pub struct PacketPong {}
 
 pub struct PacketRetry {
-    pub delay: Option<u8>,
+    pub delay: u8,
 }
 
 pub struct PacketRedirect {
@@ -105,6 +94,8 @@ impl Transport {
         }
     }
 
+    fn read_map(cur: &mut Cursor<&Vec<u8>>) {}
+
     pub fn parse_packet(data: Vec<u8>) -> Vec<Packet> {
         let mut cur = Cursor::new(&data);
         let data_len = data.len() as u64;
@@ -115,14 +106,20 @@ impl Transport {
             let packet_type = rmp::decode::read_pfix(&mut cur).unwrap();
             match packet_type {
                 // open
-                6 => {}
+                6 => {
+                    let pi = rmp::decode::read_u8(&mut cur).unwrap();
+                    let pt = rmp::decode::read_u8(&mut cur).unwrap();
+                    let cs = rmp::decode::read_u8(&mut cur).unwrap();
+                    let cm = rmp::decode::read_u8(&mut cur).unwrap();
+                    packets.push(Packet::OPEN(PacketOpen { pi, pt, cs, cm }));
+                }
                 // close
                 7 => {
                     let mut reason = Vec::new();
                     let reason = rmp::decode::read_str(&mut cur, &mut reason).unwrap();
 
                     packets.push(Packet::CLOSE(PacketClose {
-                        reason: Some(reason.to_string()),
+                        reason: reason.to_string(),
                     }));
                 }
                 // ping
@@ -136,7 +133,7 @@ impl Transport {
                 // retry
                 10 => {
                     let delay = rmp::decode::read_pfix(&mut cur).unwrap();
-                    packets.push(Packet::RETRY(PacketRetry { delay: Some(delay) }));
+                    packets.push(Packet::RETRY(PacketRetry { delay }));
                 }
                 // redirect
                 11 => {
@@ -204,7 +201,10 @@ impl Transport {
 
                     packets.push(Packet::ACK(packet));
                 }
-                _ => {}
+                _ => {
+                    // unknown packet stop parsing
+                    return packets;
+                }
             }
         }
 
