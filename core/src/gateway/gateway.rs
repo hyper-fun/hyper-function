@@ -11,8 +11,8 @@ impl Gateway {
             .await
             .expect("failed to connect to devtools");
 
-        while let Some(data) = transport.next().await {
-            println!("{}", String::from_utf8_lossy(&data));
-        }
+        // while let Some(data) = transport.next().await {
+        //     println!("{}", String::from_utf8_lossy(&data));
+        // }
     }
 }
