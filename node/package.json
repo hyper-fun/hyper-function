@@ -4,7 +4,7 @@
   "description": "",
   "main": "dist/index.js",
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --external:../core --platform=node --outfile=dist/index.js --minify",
+    "build": "esbuild src/index.ts --bundle --external:../core --platform=node --outfile=dist/index.js",
     "build:watch": "npm run build -- --watch",
     "core:build": "napi build --dts=core.d.ts",
     "test": "echo \"Error: no test specified\" && exit 1"

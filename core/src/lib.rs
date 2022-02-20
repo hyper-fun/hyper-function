@@ -3,32 +3,34 @@ use nanoid::nanoid;
 use std::{env, fs::read_to_string, path::Path};
 
 use once_cell::sync::OnceCell;
-use tokio::runtime::{Builder, Runtime};
+use tokio::{
+    runtime::{Builder, Runtime},
+    sync::mpsc,
+};
 
 mod codec;
 mod gateway;
 
-#[derive(Debug)]
-pub struct Instance {
-    pub init_args: codec::InitArgs,
-    pub json_config: codec::JsonConfig,
-    pub upstream_id: String,
-    pub runtime: Runtime,
-}
+pub static RUNTIME: OnceCell<Runtime> = OnceCell::new();
+pub static UPSTREAM_ID: OnceCell<String> = OnceCell::new();
 
-pub static INSTANCE: OnceCell<Instance> = OnceCell::new();
+pub static mut READ_CHAN_RX: OnceCell<mpsc::UnboundedReceiver<Vec<u8>>> = OnceCell::new();
+pub static mut READ_CHAN_TX: OnceCell<mpsc::UnboundedSender<Vec<u8>>> = OnceCell::new();
 
-// static CHAN: Lazy<(Sender<u32>, Receiver<u32>)> = Lazy::new(|| channel::<u32>(100));
+pub static mut WRITE_CHAN_RX: OnceCell<mpsc::UnboundedReceiver<Vec<u8>>> = OnceCell::new();
+pub static mut WRITE_CHAN_TX: OnceCell<mpsc::UnboundedSender<Vec<u8>>> = OnceCell::new();
+
+pub static INIT_ARGS: OnceCell<codec::InitArgs> = OnceCell::new();
+pub static JSON_CONFIG: OnceCell<codec::JsonConfig> = OnceCell::new();
 
 pub fn init(args: Vec<u8>) -> Vec<u8> {
-    // currently we only support one instance
-    if INSTANCE.get().is_some() {
+    if RUNTIME.get().is_some() {
         panic!("Instance already initialized");
     }
 
     let args = codec::InitArgs::from_buf(args);
-    let mut config_path;
 
+    let mut config_path;
     if env::var("HFN_CONFIG_PATH").is_ok() {
         let path = env::var("HFN_CONFIG_PATH").unwrap();
         config_path = Path::new(&path).to_owned();
@@ -55,6 +57,7 @@ pub fn init(args: Vec<u8>) -> Vec<u8> {
     runtime_builder.thread_name("hfn-core-runtime-worker");
     runtime_builder.enable_all();
     let runtime = runtime_builder.build().expect("unable build tokio runtime");
+    RUNTIME.set(runtime).unwrap();
 
     let (hfn_packages, hfn_modules, hfn_models, hfn_hfns, hfn_rpcs, hfn_schemas, hfn_fields) =
         json_config.to_hfn_struct();
@@ -66,19 +69,24 @@ pub fn init(args: Vec<u8>) -> Vec<u8> {
         upstream_id = nanoid!();
     }
 
-    INSTANCE
-        .set(Instance {
-            init_args: args,
-            json_config,
-            runtime,
-            upstream_id: upstream_id.clone(),
-        })
-        .expect("unable to set instance");
+    UPSTREAM_ID.set(upstream_id.clone()).unwrap();
 
-    // let instance = INSTANCE.get().unwrap();
+    let (read_tx, read_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+    let (write_tx, write_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+
+    unsafe {
+        READ_CHAN_RX.set(read_rx).unwrap();
+        READ_CHAN_TX.set(read_tx).unwrap();
+
+        WRITE_CHAN_RX.set(write_rx).unwrap();
+        WRITE_CHAN_TX.set(write_tx).unwrap();
+    }
+
+    INIT_ARGS.set(args).unwrap();
+    JSON_CONFIG.set(json_config).unwrap();
 
     let result = codec::InitResult {
-        upstream_id: upstream_id.clone(),
+        upstream_id,
         packages: hfn_packages,
         modules: hfn_modules,
         models: hfn_models,
@@ -91,28 +99,32 @@ pub fn init(args: Vec<u8>) -> Vec<u8> {
 }
 
 pub fn run() {
-    let instance = INSTANCE.get().unwrap();
+    let init_args = INIT_ARGS.get().unwrap();
+    let json_config = JSON_CONFIG.get().unwrap();
+    let upstream_id = UPSTREAM_ID.get().unwrap();
+    let runtime = RUNTIME.get().unwrap();
 
-    if instance.init_args.dev {
-        let mut url = url::Url::parse(&instance.json_config.dev.devtools).unwrap();
+    if init_args.dev {
+        let mut url = url::Url::parse(&json_config.dev.devtools).unwrap();
         url.set_path("/us");
 
-        url.query_pairs_mut()
-            .append_pair("usid", &instance.upstream_id);
+        url.query_pairs_mut().append_pair("usid", upstream_id);
 
         url.query_pairs_mut()
-            .append_pair("appid", &instance.json_config.appid);
+            .append_pair("appid", &json_config.appid);
 
         url.query_pairs_mut()
             .append_pair("ver", env!("CARGO_PKG_VERSION"));
 
-        url.query_pairs_mut()
-            .append_pair("sdk", &instance.init_args.sdk);
+        url.query_pairs_mut().append_pair("sdk", &init_args.sdk);
 
-        instance.runtime.spawn(async move {
+        let read_tx = unsafe { READ_CHAN_TX.get().unwrap().clone() };
+
+        runtime.spawn(async move {
             let gateway = Gateway {
                 dev: true,
                 runway: url,
+                read_tx,
             };
 
             gateway.connect().await
@@ -120,4 +132,13 @@ pub fn run() {
 
         // todo add package signature for querystring
     }
+}
+
+pub fn recv() {}
+
+pub async fn recv_async() -> Option<Vec<u8>> {
+    let read_rx = unsafe { READ_CHAN_RX.get_mut().unwrap() };
+    let data = read_rx.recv().await;
+
+    data
 }

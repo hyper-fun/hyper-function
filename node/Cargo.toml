@@ -9,9 +9,10 @@ path = "src-rs/lib.rs"
 crate-type = ["cdylib"]
 
 [dependencies]
-napi = "2"
+napi = {version="2", features=["tokio_rt"]}
 napi-derive = "2"
 hyper-function-core = { path = "../core" }
+futures = "0.3"
 
 [build-dependencies]
 napi-build = "1"

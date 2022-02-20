@@ -1,13 +1,60 @@
 import core from "../core";
-import { pack } from "msgpackr/pack";
-import { unpack } from "msgpackr/unpack";
 
 import pkg from "../package.json";
 import { HyperFunctionPackage } from "./package";
+import { Model, Schema } from "./model";
+import msgpack from "./msgpack";
 
 interface RunOptions {
   dev: boolean;
   hfnConfigPath?: string;
+}
+
+interface InitResult {
+  upstream_id: string;
+  packages: {
+    id: number;
+    name: string;
+    full_name: string;
+  }[];
+  modules: {
+    id: number;
+    name: string;
+    package_id: number;
+  }[];
+  models: {
+    id: number;
+    name: string;
+    schema_id: number;
+    package_id: number;
+    module_id: number;
+  }[];
+  hfns: {
+    id: number;
+    name: string;
+    schema_id: number;
+    package_id: number;
+    module_id: number;
+  }[];
+  rpcs: {
+    id: number;
+    name: string;
+    req_schema_id: number;
+    res_schema_id: number;
+    package_id: number;
+  }[];
+  schemas: {
+    id: number;
+    package_id: number;
+  }[];
+  fields: {
+    id: number;
+    name: string;
+    t: string;
+    is_array: boolean;
+    package_id: number;
+    schema_id: number;
+  }[];
 }
 
 export function run(
@@ -19,10 +66,10 @@ export function run(
     throw new Error('"main" package is not found');
   }
 
-  const pkgNames = packages.map((pkg) => pkg.name.toLowerCase());
-  const result = unpack(
+  const pkgNames = packages.map((pkg) => pkg.name);
+  const result: InitResult = msgpack.decode(
     core.init(
-      pack({
+      msgpack.encode({
         dev: true,
         sdk: "node-" + pkg.version,
         hfn_config_path: "/Users/afei/Desktop/aefe/hfn.json",
@@ -31,15 +78,143 @@ export function run(
     )
   );
 
+  const handlers = new Map<string, () => void>();
+
+  for (const pkgConfig of result.packages) {
+    const pkg = packages.find((pkg) => pkg.name === pkgConfig.name);
+    if (!pkg) continue;
+
+    let modConfigs = result.modules.filter(
+      (mod) => mod.package_id === pkgConfig.id
+    );
+
+    for (const modConfig of modConfigs) {
+      const mod = pkg.modules[modConfig.name.toLowerCase()];
+      if (!mod) continue;
+
+      const hfnConfigs = result.hfns.filter(
+        (hfn) =>
+          hfn.module_id === modConfig.id && hfn.package_id === pkgConfig.id
+      );
+
+      for (const hfnConfig of hfnConfigs) {
+        const hfnExists = mod.props.includes(hfnConfig.name);
+        if (!hfnExists) continue;
+
+        handlers.set(
+          `${pkgConfig.id}-${modConfig.id}-${hfnConfig.id}`,
+          mod.instance[hfnConfig.name]
+        );
+      }
+    }
+  }
+
+  const schemas = new Map<string, Schema>();
+
+  for (const schemaConfig of result.schemas) {
+    const schema: Schema = {
+      id: schemaConfig.id,
+      pkgId: schemaConfig.package_id,
+      fields: new Map(),
+    };
+
+    const fields = result.fields.filter(
+      (field) =>
+        field.schema_id === schema.id && field.package_id === schema.pkgId
+    );
+
+    for (const fieldConfig of fields) {
+      const field = {
+        id: fieldConfig.id,
+        name: fieldConfig.name,
+        type: fieldConfig.t,
+        isArray: fieldConfig.is_array,
+        pkgId: fieldConfig.package_id,
+        schemaId: fieldConfig.schema_id,
+      };
+
+      schema.fields.set(field.name, field);
+      schema.fields.set(field.id, field);
+    }
+
+    const model = result.models.find(
+      (m) => m.schema_id === schemaConfig.id && m.package_id === schema.pkgId
+    );
+
+    if (model) {
+      if (model.name === "") {
+        schema.moduleId = model.module_id;
+      }
+
+      const pkg = result.packages.find((pkg) => pkg.id === model.package_id);
+      const mod = result.modules.find(
+        (m) => m.id === model.module_id && m.package_id === model.package_id
+      );
+
+      const key = `${pkg.id === 0 ? "" : pkg.name + "."}${mod.name}.${
+        model.name || "State"
+      }`;
+
+      schemas.set(key, schema);
+      schemas.set(`model-${pkg.id}-${mod.id}-${model.id}`, schema);
+    }
+
+    const hfn = result.hfns.find(
+      (n) => n.schema_id === schemaConfig.id && n.package_id === schema.pkgId
+    );
+
+    if (hfn) {
+      schema.hfnId = hfn.id;
+
+      const pkg = result.packages.find((pkg) => pkg.id === hfn.package_id);
+      const mod = result.modules.find(
+        (m) => m.id === hfn.module_id && m.package_id === hfn.package_id
+      );
+
+      const key = `${pkg.id === 0 ? "" : pkg.name + "."}${mod.name}.${
+        hfn.name
+      }`;
+
+      schemas.set(key, schema);
+      schemas.set(`hfn-${pkg.id}-${mod.id}-${hfn.id}`, schema);
+    }
+
+    schemas.set(`${schema.pkgId}-${schema.id}`, schema);
+  }
+
   core.run();
+
+  (async () => {
+    while (true) {
+      const data = await core.recv();
+      const [pkgId, headers, payload, socketId] = msgpack.decode(
+        data,
+        true
+      ) as any[];
+
+      const msg = msgpack.decode(payload, true);
+      switch (msg[0]) {
+        case 1: {
+          const [_, moduleId, hfnId, cookies, data] = msg;
+          const schema = schemas.get(`hfn-${pkgId}-${moduleId}-${hfnId}`);
+          const model = new Model(schema, schemas);
+          model.decode(data);
+          console.log(model.toObject());
+
+          const handler = handlers.get(`${pkgId}-${moduleId}-${hfnId}`);
+          if (handler) handler();
+        }
+      }
+    }
+  })();
 }
 
 run([
   new HyperFunctionPackage([
     class HomeView {
-      show() {}
+      mount() {
+        console.log("hello world");
+      }
     },
   ]),
 ]);
-
-setTimeout(() => {}, 10000000);

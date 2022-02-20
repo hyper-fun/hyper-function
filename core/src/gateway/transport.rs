@@ -17,6 +17,7 @@ pub enum Packet {
     ACK(PacketAck),
 }
 
+#[derive(Debug)]
 pub struct PacketOpen {
     pub ping_interval: u8,   // ping interval second
     pub ping_timeout: u8,    // ping timeout second
@@ -24,22 +25,28 @@ pub struct PacketOpen {
     pub compress_method: u8, // compression method 0: no, 1: defalte
 }
 
+#[derive(Debug)]
 pub struct PacketClose {
     pub reason: String,
 }
 
+#[derive(Debug)]
 pub struct PacketPing {}
+#[derive(Debug)]
 pub struct PacketPong {}
 
+#[derive(Debug)]
 pub struct PacketRetry {
     pub delay: u8,
 }
 
+#[derive(Debug)]
 pub struct PacketRedirect {
     pub delay: u8,
     pub target: String,
 }
 
+#[derive(Debug)]
 pub struct PacketMessage {
     pub id: i32,
     pub pkg_id: i32,
@@ -49,6 +56,7 @@ pub struct PacketMessage {
     pub compress: u8,
 }
 
+#[derive(Debug)]
 pub struct PacketAck {
     pub id: i32,
     pub pkg_id: i32,
@@ -63,7 +71,6 @@ impl Transport {
         url.query_pairs_mut()
             .append_pair("ts", &chrono::Utc::now().timestamp_millis().to_string());
 
-        println!("connecting to devtools: {}", url.to_string());
         let (stream, _) = connect_async(url).await?;
 
         Ok(Transport { stream })
@@ -80,21 +87,51 @@ impl Transport {
         // todo handle close
     }
 
-    pub async fn next(&mut self) -> Option<Vec<Packet>> {
+    pub async fn next(&mut self) -> Option<Vec<PacketMessage>> {
         if let Some(msg) = self.stream.next().await {
+            let mut packets: Vec<PacketMessage> = Vec::new();
             if msg.is_err() {
                 // TODO handle error
-                // return None;
+                return Some(packets);
             }
 
             let data = msg.unwrap().into_data();
+            let data_len = data.len() as u64;
             let mut cur = Cursor::new(&data);
 
-            let data_len = data.len() as u64;
-            let mut packets: Vec<Packet> = Vec::new();
-
             while cur.position() < data_len {
-                let packet = Transport::parse_packet(&mut cur);
+                if let Some(packet) = Transport::parse_packet(&mut cur) {
+                    match packet {
+                        Packet::OPEN(open) => {
+                            println!("open: {:?}", open);
+                        }
+                        Packet::CLOSE(close) => {
+                            println!("close: {:?}", close);
+                            return None;
+                        }
+                        Packet::PING(ping) => {
+                            println!("ping: {:?}", ping);
+                        }
+                        Packet::PONG(pong) => {
+                            println!("pong: {:?}", pong);
+                        }
+                        Packet::RETRY(retry) => {
+                            println!("retry: {:?}", retry);
+                        }
+                        Packet::REDIRECT(redirect) => {
+                            println!("redirect: {:?}", redirect);
+                        }
+                        Packet::MESSAGE(message) => {
+                            packets.push(message);
+                        }
+                        Packet::ACK(ack) => {
+                            println!("ack: {:?}", ack);
+                        }
+                    }
+                } else {
+                    // unkonw packet
+                    return Some(packets);
+                }
             }
 
             return Some(packets);
