@@ -1,4 +1,3 @@
-use futures::prelude::*;
 use hyper_function_core;
 use napi::bindgen_prelude::*;
 
@@ -16,8 +15,13 @@ pub fn run() {
 }
 
 #[napi]
-pub async fn recv() -> Buffer {
-    let data = hyper_function_core::recv_async().await.unwrap();
+pub async fn read() -> Buffer {
+    let data = hyper_function_core::read_async().await.unwrap();
 
     data.into()
+}
+
+#[napi]
+pub fn send_message(socket_id: String, payload: Buffer) {
+    hyper_function_core::send_message(socket_id, payload.into());
 }

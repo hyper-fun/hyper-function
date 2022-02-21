@@ -17,8 +17,9 @@ pub static UPSTREAM_ID: OnceCell<String> = OnceCell::new();
 pub static mut READ_CHAN_RX: OnceCell<mpsc::UnboundedReceiver<Vec<u8>>> = OnceCell::new();
 pub static mut READ_CHAN_TX: OnceCell<mpsc::UnboundedSender<Vec<u8>>> = OnceCell::new();
 
-pub static mut WRITE_CHAN_RX: OnceCell<mpsc::UnboundedReceiver<Vec<u8>>> = OnceCell::new();
-pub static mut WRITE_CHAN_TX: OnceCell<mpsc::UnboundedSender<Vec<u8>>> = OnceCell::new();
+pub static mut WRITE_CHAN_RX: OnceCell<mpsc::UnboundedReceiver<(String, Vec<u8>)>> =
+    OnceCell::new();
+pub static mut WRITE_CHAN_TX: OnceCell<mpsc::UnboundedSender<(String, Vec<u8>)>> = OnceCell::new();
 
 pub static INIT_ARGS: OnceCell<codec::InitArgs> = OnceCell::new();
 pub static JSON_CONFIG: OnceCell<codec::JsonConfig> = OnceCell::new();
@@ -72,7 +73,7 @@ pub fn init(args: Vec<u8>) -> Vec<u8> {
     UPSTREAM_ID.set(upstream_id.clone()).unwrap();
 
     let (read_tx, read_rx) = mpsc::unbounded_channel::<Vec<u8>>();
-    let (write_tx, write_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+    let (write_tx, write_rx) = mpsc::unbounded_channel::<(String, Vec<u8>)>();
 
     unsafe {
         READ_CHAN_RX.set(read_rx).unwrap();
@@ -127,18 +128,23 @@ pub fn run() {
                 read_tx,
             };
 
-            gateway.connect().await
+            gateway.connect().await;
         });
 
         // todo add package signature for querystring
     }
 }
 
-pub fn recv() {}
+pub fn read() {}
 
-pub async fn recv_async() -> Option<Vec<u8>> {
+pub async fn read_async() -> Option<Vec<u8>> {
     let read_rx = unsafe { READ_CHAN_RX.get_mut().unwrap() };
     let data = read_rx.recv().await;
 
     data
+}
+
+pub fn send_message(socket_id: String, payload: Vec<u8>) {
+    let write_tx = unsafe { WRITE_CHAN_TX.get_mut().unwrap() };
+    write_tx.send((socket_id, payload)).unwrap();
 }

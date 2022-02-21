@@ -4,6 +4,7 @@ import pkg from "../package.json";
 import { HyperFunctionPackage } from "./package";
 import { Model, Schema } from "./model";
 import msgpack from "./msgpack";
+import { Context } from "./context";
 
 interface RunOptions {
   dev: boolean;
@@ -78,7 +79,7 @@ export function run(
     )
   );
 
-  const handlers = new Map<string, () => void>();
+  const handlers = new Map<string, (ctx: Context) => void>();
 
   for (const pkgConfig of result.packages) {
     const pkg = packages.find((pkg) => pkg.name === pkgConfig.name);
@@ -186,7 +187,7 @@ export function run(
 
   (async () => {
     while (true) {
-      const data = await core.recv();
+      const data = await core.read();
       const [pkgId, headers, payload, socketId] = msgpack.decode(
         data,
         true
@@ -196,13 +197,18 @@ export function run(
       switch (msg[0]) {
         case 1: {
           const [_, moduleId, hfnId, cookies, data] = msg;
-          const schema = schemas.get(`hfn-${pkgId}-${moduleId}-${hfnId}`);
+          const id = `${pkgId}-${moduleId}-${hfnId}`;
+          const schema = schemas.get(`hfn-${id}`);
           const model = new Model(schema, schemas);
-          model.decode(data);
-          console.log(model.toObject());
+          if (data) model.decode(data);
 
-          const handler = handlers.get(`${pkgId}-${moduleId}-${hfnId}`);
-          if (handler) handler();
+          const context = new Context(pkgId, socketId, headers, cookies, data, {
+            moduleId,
+            hfnId,
+            schemas,
+          });
+          const handler = handlers.get(id);
+          if (handler) handler(context);
         }
       }
     }
@@ -212,8 +218,11 @@ export function run(
 run([
   new HyperFunctionPackage([
     class HomeView {
-      mount() {
-        console.log("hello world");
+      mount(ctx: Context) {
+        const state = ctx.model("homeView.State");
+        state.set("regreg", "blabla!!❤️");
+
+        ctx.render(state);
       }
     },
   ]),

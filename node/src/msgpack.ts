@@ -1,20 +1,16 @@
-import { pack } from "msgpackr/pack";
+import { Packr } from "msgpackr/pack";
 import { unpack, unpackMultiple } from "msgpackr/unpack";
+
+const packer = new Packr({ variableMapSize: true, useRecords: false });
 
 const msgpack = {
   encode(data: any, multiple?: boolean) {
-    if (multiple) {
-      return Buffer.concat(data.map((d: any) => pack(d)));
-    }
-
-    return pack(data);
+    if (!multiple) return packer.encode(data);
+    return Buffer.concat(data.map((item: any) => packer.encode(item)));
   },
   decode(data: any, multiple?: boolean) {
-    if (multiple) {
-      return unpackMultiple(data);
-    }
-
-    return unpack(data);
+    if (!multiple) return unpack(data);
+    return unpackMultiple(data);
   },
 };
 

@@ -1,9 +1,14 @@
-use std::io::Cursor;
+use std::{io::Cursor, vec};
 
-use futures_util::{stream::Map, SinkExt, StreamExt};
+use futures_util::{
+    stream::{SplitSink, SplitStream},
+    SinkExt, StreamExt,
+};
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
-    connect_async, tungstenite::error::Error, tungstenite::Message, MaybeTlsStream, WebSocketStream,
+    connect_async,
+    tungstenite::{error::Error, Message},
+    MaybeTlsStream, WebSocketStream,
 };
 
 pub enum Packet {
@@ -62,34 +67,41 @@ pub struct PacketAck {
     pub pkg_id: i32,
 }
 
-pub struct Transport {
-    stream: WebSocketStream<MaybeTlsStream<TcpStream>>,
-}
+pub struct Transport {}
 
 impl Transport {
-    pub async fn connect(mut url: url::Url) -> Result<Self, Error> {
+    pub async fn connect(
+        mut url: url::Url,
+    ) -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>, Error> {
         url.query_pairs_mut()
             .append_pair("ts", &chrono::Utc::now().timestamp_millis().to_string());
 
         let (stream, _) = connect_async(url).await?;
 
-        Ok(Transport { stream })
-
-        // while let Some(msg) = stream.next().await {
-        //     if msg.is_err() {
-        //         // TODO handle error
-        //         continue;
-        //     }
-
-        //     let data = msg.unwrap().into_data();
-        // }
-
-        // todo handle close
+        Ok(stream)
     }
 
-    pub async fn next(&mut self) -> Option<Vec<PacketMessage>> {
-        if let Some(msg) = self.stream.next().await {
-            let mut packets: Vec<PacketMessage> = Vec::new();
+    pub async fn send_message(
+        data: (String, Vec<u8>),
+        sink: &mut SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>,
+    ) -> Result<(), Error> {
+        let (socket_id, mut data) = data;
+        let mut buf = Vec::with_capacity(4 + data.len() + socket_id.len());
+        rmp::encode::write_pfix(&mut buf, 12).unwrap();
+        buf.append(&mut data);
+        rmp::encode::write_str(&mut buf, &socket_id).unwrap();
+        rmp::encode::write_pfix(&mut buf, 0).unwrap();
+
+        println!("write {:?}", buf);
+        sink.send(Message::Binary(buf)).await?;
+        Ok(())
+    }
+
+    pub async fn next(
+        stream: &mut SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
+    ) -> Option<Vec<Packet>> {
+        if let Some(msg) = stream.next().await {
+            let mut packets: Vec<Packet> = Vec::new();
             if msg.is_err() {
                 // TODO handle error
                 return Some(packets);
@@ -101,33 +113,7 @@ impl Transport {
 
             while cur.position() < data_len {
                 if let Some(packet) = Transport::parse_packet(&mut cur) {
-                    match packet {
-                        Packet::OPEN(open) => {
-                            println!("open: {:?}", open);
-                        }
-                        Packet::CLOSE(close) => {
-                            println!("close: {:?}", close);
-                            return None;
-                        }
-                        Packet::PING(ping) => {
-                            println!("ping: {:?}", ping);
-                        }
-                        Packet::PONG(pong) => {
-                            println!("pong: {:?}", pong);
-                        }
-                        Packet::RETRY(retry) => {
-                            println!("retry: {:?}", retry);
-                        }
-                        Packet::REDIRECT(redirect) => {
-                            println!("redirect: {:?}", redirect);
-                        }
-                        Packet::MESSAGE(message) => {
-                            packets.push(message);
-                        }
-                        Packet::ACK(ack) => {
-                            println!("ack: {:?}", ack);
-                        }
-                    }
+                    packets.push(packet);
                 } else {
                     // unkonw packet
                     return Some(packets);
