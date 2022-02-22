@@ -82,8 +82,8 @@ impl Transport {
     }
 
     pub async fn send_message(
-        data: (String, Vec<u8>),
         sink: &mut SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>,
+        data: (String, Vec<u8>),
     ) -> Result<(), Error> {
         let (socket_id, mut data) = data;
         let mut buf = Vec::with_capacity(4 + data.len() + socket_id.len());
@@ -92,7 +92,6 @@ impl Transport {
         rmp::encode::write_str(&mut buf, &socket_id).unwrap();
         rmp::encode::write_pfix(&mut buf, 0).unwrap();
 
-        println!("write {:?}", buf);
         sink.send(Message::Binary(buf)).await?;
         Ok(())
     }

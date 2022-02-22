@@ -5,7 +5,10 @@ use futures_util::{
     SinkExt, StreamExt,
 };
 use hyper::upgrade::Upgraded;
-use hyper_tungstenite::{tungstenite::Message, WebSocketStream};
+use hyper_tungstenite::{
+    tungstenite::{Error, Message},
+    WebSocketStream,
+};
 use tokio::{
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
     task::JoinHandle,
@@ -100,13 +103,30 @@ impl Transport {
         }
     }
 
-    pub fn encode_packet_open(ping_interval: i64, ping_timeout: i64) -> Vec<u8> {
+    pub async fn send_open_packet(
+        sink: &mut SplitSink<WebSocketStream<Upgraded>, Message>,
+        ping_interval: i64,
+        ping_timeout: i64,
+    ) -> Result<(), Error> {
         let mut data = Vec::with_capacity(3);
         rmp::encode::write_sint(&mut data, 1).unwrap();
         rmp::encode::write_sint(&mut data, ping_interval).unwrap();
         rmp::encode::write_sint(&mut data, ping_timeout).unwrap();
 
-        data
+        sink.send(Message::Binary(data)).await?;
+        Ok(())
+    }
+
+    pub async fn send_message_packet(
+        sink: &mut SplitSink<WebSocketStream<Upgraded>, Message>,
+        mut data: Vec<u8>,
+    ) -> Result<(), Error> {
+        let mut buf = Vec::with_capacity(1 + data.len());
+        rmp::encode::write_pfix(&mut buf, 8).unwrap();
+        buf.append(&mut data);
+
+        sink.send(Message::Binary(buf)).await?;
+        Ok(())
     }
 
     pub fn parse_packet(cur: &mut Cursor<&Vec<u8>>) -> Option<Packet> {

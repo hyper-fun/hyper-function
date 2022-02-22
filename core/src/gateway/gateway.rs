@@ -23,7 +23,7 @@ impl Gateway {
         let sink_task = tokio::spawn(async move {
             let write_rx = unsafe { WRITE_CHAN_RX.get_mut().unwrap() };
             while let Some(data) = write_rx.recv().await {
-                Transport::send_message(data, &mut sink).await.unwrap();
+                Transport::send_message(&mut sink, data).await.unwrap();
             }
         });
 

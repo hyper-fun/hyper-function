@@ -12,7 +12,7 @@ use hyper::{
 use rusty_ulid::generate_ulid_string;
 use tokio::sync::mpsc;
 
-use crate::{APP_ID, READ_CHAN_TX};
+use crate::{APP_ID, READ_CHAN_TX, SOCKETS};
 
 use super::{socket::Socket, transport::Transport};
 
@@ -24,6 +24,7 @@ impl Server {
     pub async fn handle_request(request: Request<Body>) -> Result<Response<Body>, Infallible> {
         if request.uri().path().eq("/hfn") {
             let bad_request = || {
+                println!("bad request");
                 return Ok(Response::builder()
                     .status(400)
                     .body(Body::from("Bad Request"))
@@ -88,23 +89,32 @@ impl Server {
                 Err(_) => return bad_request(),
             };
 
-            let stream = match websocket.await {
-                Ok(v) => v,
-                Err(_) => return bad_request(),
-            };
-
             tokio::spawn(async move {
+                let stream = match websocket.await {
+                    Ok(v) => v,
+                    Err(_) => {
+                        return ();
+                    }
+                };
+
+                let (write_chan_tx, write_chan_rx) = mpsc::unbounded_channel::<Vec<u8>>();
                 let socket = Socket {
                     id: generate_ulid_string(),
                     client_id,
                     session_id,
                     client_ts,
                     client_version,
+                    write_chan_tx,
                 };
 
-                let read_chan_tx = unsafe { READ_CHAN_TX.get().unwrap().clone() };
+                let read_chan_tx = READ_CHAN_TX.get().unwrap().clone();
 
-                socket.accept_ws(stream, read_chan_tx).await;
+                let socket_id = socket.id.clone();
+                let sockets = SOCKETS.get().unwrap();
+                sockets.insert(socket_id.clone(), socket);
+
+                let socket = sockets.get(&socket_id).unwrap();
+                socket.accept_ws(stream, read_chan_tx, write_chan_rx).await;
             });
 
             // Return the response so the spawned future can continue.
@@ -123,6 +133,7 @@ impl Server {
             Ok::<_, Infallible>(service_fn(Server::handle_request))
         }));
 
+        println!("Listening on {}", self.addr);
         if let Err(e) = server.await {
             eprintln!("server error: {}", e);
         }

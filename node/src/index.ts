@@ -200,14 +200,21 @@ export function run(
           const [_, moduleId, hfnId, cookies, data] = msg;
           const id = `${pkgId}-${moduleId}-${hfnId}`;
           const schema = schemas.get(`hfn-${id}`);
-          const model = new Model(schema, schemas);
-          if (data) model.decode(data);
+          const dataModel = new Model(schema, schemas);
+          if (data) dataModel.decode(data);
 
-          const context = new Context(pkgId, socketId, headers, cookies, data, {
-            moduleId,
-            hfnId,
-            schemas,
-          });
+          const context = new Context(
+            pkgId,
+            socketId,
+            headers,
+            cookies,
+            dataModel,
+            {
+              moduleId,
+              hfnId,
+              schemas,
+            }
+          );
           const handler = handlers.get(id);
           if (handler) handler(context);
         }
@@ -220,6 +227,8 @@ run([
   new HyperFunctionPackage([
     class HomeView {
       mount(ctx: Context) {
+        console.log(ctx.headers);
+        console.log(ctx.data.toObject());
         const state = ctx.model("homeView.State");
         state.set("regreg", "blabla!!❤️");
 

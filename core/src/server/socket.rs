@@ -1,18 +1,18 @@
-use std::fmt::Write;
-
 use futures_util::{SinkExt, StreamExt};
 use hyper::upgrade::Upgraded;
 use hyper_tungstenite::{tungstenite::Message, WebSocketStream};
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use super::transport::{Packet, PacketMessage, Transport};
 
+#[derive(Debug)]
 pub struct Socket {
     pub id: String,
     pub client_id: String,
     pub session_id: String,
     pub client_ts: u64,
     pub client_version: String,
+    pub write_chan_tx: UnboundedSender<Vec<u8>>,
 }
 
 impl Socket {
@@ -20,11 +20,21 @@ impl Socket {
         &self,
         stream: WebSocketStream<Upgraded>,
         read_chan_tx: UnboundedSender<Vec<u8>>,
+        mut write_chan_rx: UnboundedReceiver<Vec<u8>>,
     ) {
         let (mut sink, mut stream) = stream.split();
 
-        let open_packet = Transport::encode_packet_open(25, 20);
-        sink.send(Message::Binary(open_packet)).await.unwrap();
+        Transport::send_open_packet(&mut sink, 25, 20)
+            .await
+            .unwrap();
+
+        let sink_task = tokio::spawn(async move {
+            while let Some(data) = write_chan_rx.recv().await {
+                Transport::send_message_packet(&mut sink, data)
+                    .await
+                    .unwrap();
+            }
+        });
 
         let socket_id = self.id.clone();
         let stream_task = tokio::spawn(async move {
@@ -65,7 +75,7 @@ impl Socket {
                 }
             }
 
-            // sink_task.abort();
+            sink_task.abort();
         });
 
         stream_task.await.unwrap();
