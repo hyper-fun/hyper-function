@@ -1,5 +1,6 @@
 use gateway::gateway::Gateway;
-use nanoid::nanoid;
+use rusty_ulid::generate_ulid_string;
+use server::server::Server;
 use std::{env, fs::read_to_string, path::Path};
 
 use once_cell::sync::OnceCell;
@@ -10,9 +11,12 @@ use tokio::{
 
 mod codec;
 mod gateway;
+mod server;
+
+pub static mut APP_ID: String = String::new();
+pub static mut UPSTREAM_ID: String = String::new();
 
 pub static RUNTIME: OnceCell<Runtime> = OnceCell::new();
-pub static UPSTREAM_ID: OnceCell<String> = OnceCell::new();
 
 pub static mut READ_CHAN_RX: OnceCell<mpsc::UnboundedReceiver<Vec<u8>>> = OnceCell::new();
 pub static mut READ_CHAN_TX: OnceCell<mpsc::UnboundedSender<Vec<u8>>> = OnceCell::new();
@@ -67,15 +71,15 @@ pub fn init(args: Vec<u8>) -> Vec<u8> {
     if let Some(id) = &args.upstream_id {
         upstream_id = id.to_owned();
     } else {
-        upstream_id = nanoid!();
+        upstream_id = generate_ulid_string();
     }
-
-    UPSTREAM_ID.set(upstream_id.clone()).unwrap();
 
     let (read_tx, read_rx) = mpsc::unbounded_channel::<Vec<u8>>();
     let (write_tx, write_rx) = mpsc::unbounded_channel::<(String, Vec<u8>)>();
 
     unsafe {
+        APP_ID = json_config.appid.clone();
+        UPSTREAM_ID = upstream_id.clone();
         READ_CHAN_RX.set(read_rx).unwrap();
         READ_CHAN_TX.set(read_tx).unwrap();
 
@@ -102,14 +106,22 @@ pub fn init(args: Vec<u8>) -> Vec<u8> {
 pub fn run() {
     let init_args = INIT_ARGS.get().unwrap();
     let json_config = JSON_CONFIG.get().unwrap();
-    let upstream_id = UPSTREAM_ID.get().unwrap();
+    let upstream_id = unsafe { UPSTREAM_ID.clone() };
+
     let runtime = RUNTIME.get().unwrap();
 
-    if init_args.dev {
+    let read_tx = unsafe { READ_CHAN_TX.get().unwrap().clone() };
+    if !init_args.dev {
+        let addr = init_args.addr.as_ref().unwrap().clone();
+        runtime.spawn(async move {
+            let server = Server { addr };
+            server.listen().await
+        });
+    } else {
         let mut url = url::Url::parse(&json_config.dev.devtools).unwrap();
         url.set_path("/us");
 
-        url.query_pairs_mut().append_pair("usid", upstream_id);
+        url.query_pairs_mut().append_pair("usid", &upstream_id);
 
         url.query_pairs_mut()
             .append_pair("appid", &json_config.appid);
@@ -119,15 +131,13 @@ pub fn run() {
 
         url.query_pairs_mut().append_pair("sdk", &init_args.sdk);
 
-        let read_tx = unsafe { READ_CHAN_TX.get().unwrap().clone() };
+        let gateway = Gateway {
+            dev: true,
+            runway: url,
+            read_tx,
+        };
 
         runtime.spawn(async move {
-            let gateway = Gateway {
-                dev: true,
-                runway: url,
-                read_tx,
-            };
-
             gateway.connect().await;
         });
 
@@ -145,6 +155,6 @@ pub async fn read_async() -> Option<Vec<u8>> {
 }
 
 pub fn send_message(socket_id: String, payload: Vec<u8>) {
-    let write_tx = unsafe { WRITE_CHAN_TX.get_mut().unwrap() };
+    let write_tx = unsafe { WRITE_CHAN_TX.get().unwrap().clone() };
     write_tx.send((socket_id, payload)).unwrap();
 }

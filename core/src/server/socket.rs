@@ -1,33 +1,32 @@
-use futures_util::StreamExt;
-use tokio::sync::mpsc;
+use std::fmt::Write;
 
-use crate::gateway::transport::Packet;
+use futures_util::{SinkExt, StreamExt};
+use hyper::upgrade::Upgraded;
+use hyper_tungstenite::{tungstenite::Message, WebSocketStream};
+use tokio::sync::mpsc::UnboundedSender;
 
-use super::super::WRITE_CHAN_RX;
-use super::transport::{PacketMessage, Transport};
+use super::transport::{Packet, PacketMessage, Transport};
 
-pub struct Gateway {
-    pub dev: bool,
-    pub runway: url::Url,
-    pub read_tx: mpsc::UnboundedSender<Vec<u8>>,
+pub struct Socket {
+    pub id: String,
+    pub client_id: String,
+    pub session_id: String,
+    pub client_ts: u64,
+    pub client_version: String,
 }
 
-impl Gateway {
-    pub async fn connect(&self) {
-        let stream = Transport::connect(self.runway.clone())
-            .await
-            .expect("failed to connect to devtools");
-
+impl Socket {
+    pub async fn accept_ws(
+        &self,
+        stream: WebSocketStream<Upgraded>,
+        read_chan_tx: UnboundedSender<Vec<u8>>,
+    ) {
         let (mut sink, mut stream) = stream.split();
 
-        let sink_task = tokio::spawn(async move {
-            let write_rx = unsafe { WRITE_CHAN_RX.get_mut().unwrap() };
-            while let Some(data) = write_rx.recv().await {
-                Transport::send_message(data, &mut sink).await.unwrap();
-            }
-        });
+        let open_packet = Transport::encode_packet_open(25, 20);
+        sink.send(Message::Binary(open_packet)).await.unwrap();
 
-        let read_tx = self.read_tx.clone();
+        let socket_id = self.id.clone();
         let stream_task = tokio::spawn(async move {
             while let Some(packets) = Transport::next(&mut stream).await {
                 for packet in packets {
@@ -47,12 +46,15 @@ impl Gateway {
                         Packet::RETRY(retry) => {
                             println!("retry: {:?}", retry);
                         }
+                        Packet::RESET(reset) => {
+                            println!("reset: {:?}", reset);
+                        }
                         Packet::REDIRECT(redirect) => {
                             println!("redirect: {:?}", redirect);
                         }
                         Packet::MESSAGE(msg) => {
-                            let data = Gateway::encode_message(msg);
-                            read_tx
+                            let data = Socket::encode_message(&socket_id, msg);
+                            read_chan_tx
                                 .send(data)
                                 .expect("failed to send message to read_tx");
                         }
@@ -63,15 +65,14 @@ impl Gateway {
                 }
             }
 
-            sink_task.abort();
+            // sink_task.abort();
         });
 
         stream_task.await.unwrap();
-        println!("Devtools connection closed");
     }
 
-    fn encode_message(mut msg: PacketMessage) -> Vec<u8> {
-        let mut cap = 4 + 2 + msg.payload.len() + 2 + msg.socket_id.len();
+    fn encode_message(socket_id: &str, mut msg: PacketMessage) -> Vec<u8> {
+        let mut cap = 4 + 2 + msg.payload.len() + 2 + socket_id.len();
 
         cap += 2;
         if !msg.headers.is_empty() {
@@ -97,8 +98,7 @@ impl Gateway {
         }
 
         rmp::encode::write_bin(&mut data, &msg.payload).unwrap();
-        rmp::encode::write_str_len(&mut data, msg.socket_id.len() as u32).unwrap();
-        data.append(&mut msg.socket_id);
+        rmp::encode::write_str(&mut data, socket_id).unwrap();
 
         data
     }

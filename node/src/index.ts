@@ -71,7 +71,8 @@ export function run(
   const result: InitResult = msgpack.decode(
     core.init(
       msgpack.encode({
-        dev: true,
+        dev: false,
+        addr: "[::1]:3000",
         sdk: "node-" + pkg.version,
         hfn_config_path: "/Users/afei/Desktop/aefe/hfn.json",
         pkg_names: pkgNames,

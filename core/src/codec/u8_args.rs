@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 pub struct InitArgs {
     pub dev: bool,
     pub sdk: String,
+    pub addr: Option<String>,
     pub upstream_id: Option<String>,
     pub pkg_names: Vec<String>,
     pub hfn_config_path: Option<String>,
