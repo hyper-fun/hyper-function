@@ -1,10 +1,13 @@
-use std::time::Duration;
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use futures_util::StreamExt;
 use hyper::upgrade::Upgraded;
 use hyper_tungstenite::WebSocketStream;
 use tokio::{
-    sync::mpsc::{UnboundedReceiver, UnboundedSender},
+    sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
     time::sleep,
 };
 
@@ -23,6 +26,7 @@ pub enum Action {
     SendOpen(ActionSendOpen),
     SendPing(ActionSendPing),
     SendMessage(ActionSendMessage),
+    Close(ActionClose),
 }
 
 #[derive(Debug)]
@@ -39,6 +43,8 @@ pub struct ActionSendMessage {
     pub payload: Vec<u8>,
 }
 
+pub struct ActionClose {}
+
 impl Socket {
     pub async fn accept_ws(
         &self,
@@ -54,6 +60,9 @@ impl Socket {
             ping_timeout: 20,
         }));
 
+        let (close_tx, mut close_rx) = mpsc::channel::<()>(1);
+
+        let close_tx_clone = close_tx.clone();
         let sink_task = tokio::spawn(async move {
             while let Some(action) = socket_write_chan_rx.recv().await {
                 match action {
@@ -69,26 +78,32 @@ impl Socket {
                         Transport::send_ping_packet(&mut sink).await;
                     }
                     Action::SendMessage(action) => {
-                        println!("send message action: {:?}", action);
                         Transport::send_message_packet(&mut sink, action.payload).await;
+                    }
+                    Action::Close(action) => {
+                        Transport::send_close_packet(&mut sink, "").await;
+                        close_tx_clone.send(()).await;
                     }
                 }
             }
         });
 
         let socket_id = self.id.clone();
-        let mut last_heartbeat = chrono::Utc::now().timestamp();
+        let last_heartbeat = Arc::new(Mutex::new(chrono::Utc::now().timestamp()));
+
+        let last_heartbeat_clone = last_heartbeat.clone();
+        let close_tx_clone = close_tx.clone();
 
         let stream_task = tokio::spawn(async move {
             while let Some(packets) = Transport::next(&mut stream).await {
-                last_heartbeat = chrono::Utc::now().timestamp();
                 for packet in packets {
                     match packet {
                         Packet::OPEN(open) => {
                             println!("open: {:?}", open);
                         }
                         Packet::CLOSE(close) => {
-                            println!("close: {:?}", close);
+                            close_tx_clone.send(()).await;
+                            return;
                         }
                         Packet::PING(ping) => {
                             println!("ping: {:?}", ping);
@@ -109,17 +124,23 @@ impl Socket {
                         _ => {}
                     }
                 }
+
+                *last_heartbeat_clone.lock().unwrap() = chrono::Utc::now().timestamp();
             }
+
+            close_tx_clone.send(()).await;
         });
 
         let socket_write_chan_tx = socket_write_chan_tx.clone();
+
+        let close_tx_clone = close_tx.clone();
         let heartbeat_task = tokio::spawn(async move {
             loop {
                 let now = chrono::Utc::now().timestamp();
-                if now - last_heartbeat > 25 + 20 {
-                    // close
+                let heartbeat_at = *last_heartbeat.lock().unwrap();
 
-                    // &stream_task.abort();
+                if now - heartbeat_at > 25 + 20 {
+                    close_tx_clone.send(()).await;
                     return;
                 }
 
@@ -129,11 +150,11 @@ impl Socket {
             }
         });
 
-        stream_task.await.unwrap();
+        close_rx.recv().await;
+
+        stream_task.abort();
         sink_task.abort();
         heartbeat_task.abort();
-
-        println!("socket closed");
     }
 
     fn encode_message(socket_id: &str, mut msg: PacketMessage) -> Vec<u8> {

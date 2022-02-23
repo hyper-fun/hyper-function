@@ -140,6 +140,18 @@ impl Transport {
         Ok(())
     }
 
+    pub async fn send_close_packet(
+        sink: &mut SplitSink<WebSocketStream<Upgraded>, Message>,
+        reason: &str,
+    ) -> Result<(), Error> {
+        let mut data = Vec::with_capacity(3);
+        rmp::encode::write_sint(&mut data, 5).unwrap();
+        rmp::encode::write_str(&mut data, reason).unwrap();
+
+        sink.send(Message::Binary(data)).await?;
+        Ok(())
+    }
+
     pub async fn send_ping_packet(
         sink: &mut SplitSink<WebSocketStream<Upgraded>, Message>,
     ) -> Result<(), Error> {
