@@ -1,10 +1,5 @@
-use std::{
-    collections::HashMap,
-    convert::Infallible,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, convert::Infallible};
 
-use futures_util::StreamExt;
 use hyper::{
     service::{make_service_fn, service_fn},
     Body, Request, Response, Server as HyperServer, StatusCode,
@@ -12,9 +7,9 @@ use hyper::{
 use rusty_ulid::generate_ulid_string;
 use tokio::sync::mpsc;
 
-use crate::{APP_ID, READ_CHAN_TX, SOCKETS};
+use crate::{APP_ID, READ_CHAN_TX, SOCKET_CHANS};
 
-use super::{socket::Socket, transport::Transport};
+use super::socket::{Action, Socket};
 
 pub struct Server {
     pub addr: String,
@@ -97,24 +92,33 @@ impl Server {
                     }
                 };
 
-                let (write_chan_tx, write_chan_rx) = mpsc::unbounded_channel::<Vec<u8>>();
                 let socket = Socket {
                     id: generate_ulid_string(),
                     client_id,
                     session_id,
                     client_ts,
                     client_version,
-                    write_chan_tx,
                 };
 
                 let read_chan_tx = READ_CHAN_TX.get().unwrap().clone();
+                let (socket_write_chan_tx, socket_write_chan_rx) =
+                    mpsc::unbounded_channel::<Action>();
 
                 let socket_id = socket.id.clone();
-                let sockets = SOCKETS.get().unwrap();
-                sockets.insert(socket_id.clone(), socket);
+                let socket_chans = SOCKET_CHANS.get().unwrap();
+                socket_chans.insert(socket_id.clone(), socket_write_chan_tx.clone());
 
-                let socket = sockets.get(&socket_id).unwrap();
-                socket.accept_ws(stream, read_chan_tx, write_chan_rx).await;
+                socket
+                    .accept_ws(
+                        stream,
+                        read_chan_tx,
+                        socket_write_chan_tx,
+                        socket_write_chan_rx,
+                    )
+                    .await;
+
+                // clean up
+                socket_chans.remove(&socket_id);
             });
 
             // Return the response so the spawned future can continue.

@@ -1,8 +1,11 @@
 use dashmap::DashMap;
 use gateway::gateway::Gateway;
 use rusty_ulid::generate_ulid_string;
-use server::{server::Server, socket::Socket};
-use std::{env, fs::read_to_string, path::Path, sync::Arc};
+use server::{
+    server::Server,
+    socket::{Action, ActionSendMessage},
+};
+use std::{env, fs::read_to_string, path::Path};
 
 use once_cell::sync::OnceCell;
 use tokio::{
@@ -18,14 +21,16 @@ pub static mut APP_ID: String = String::new();
 pub static mut UPSTREAM_ID: String = String::new();
 
 pub static RUNTIME: OnceCell<Runtime> = OnceCell::new();
-pub static SOCKETS: OnceCell<DashMap<String, Socket>> = OnceCell::new();
+
+pub static SOCKET_CHANS: OnceCell<DashMap<String, mpsc::UnboundedSender<Action>>> = OnceCell::new();
 
 pub static mut READ_CHAN_RX: OnceCell<mpsc::UnboundedReceiver<Vec<u8>>> = OnceCell::new();
 pub static READ_CHAN_TX: OnceCell<mpsc::UnboundedSender<Vec<u8>>> = OnceCell::new();
 
-pub static mut WRITE_CHAN_RX: OnceCell<mpsc::UnboundedReceiver<(String, Vec<u8>)>> =
+pub static mut GATEWAY_WRITE_CHAN_RX: OnceCell<mpsc::UnboundedReceiver<(String, Vec<u8>)>> =
     OnceCell::new();
-pub static WRITE_CHAN_TX: OnceCell<mpsc::UnboundedSender<(String, Vec<u8>)>> = OnceCell::new();
+pub static GATEWAY_WRITE_CHAN_TX: OnceCell<mpsc::UnboundedSender<(String, Vec<u8>)>> =
+    OnceCell::new();
 
 pub static INIT_ARGS: OnceCell<codec::InitArgs> = OnceCell::new();
 pub static JSON_CONFIG: OnceCell<codec::JsonConfig> = OnceCell::new();
@@ -77,20 +82,17 @@ pub fn init(args: Vec<u8>) -> Vec<u8> {
     }
 
     let (read_tx, read_rx) = mpsc::unbounded_channel::<Vec<u8>>();
-    let (write_tx, write_rx) = mpsc::unbounded_channel::<(String, Vec<u8>)>();
 
     unsafe {
         APP_ID = json_config.appid.clone();
         UPSTREAM_ID = upstream_id.clone();
 
         READ_CHAN_RX.set(read_rx).unwrap();
-        WRITE_CHAN_RX.set(write_rx).unwrap();
     }
 
     READ_CHAN_TX.set(read_tx).unwrap();
-    WRITE_CHAN_TX.set(write_tx).unwrap();
 
-    SOCKETS.set(DashMap::new()).unwrap();
+    SOCKET_CHANS.set(DashMap::new()).unwrap();
     INIT_ARGS.set(args).unwrap();
     JSON_CONFIG.set(json_config).unwrap();
 
@@ -114,7 +116,6 @@ pub fn run() {
 
     let runtime = RUNTIME.get().unwrap();
 
-    let read_tx = READ_CHAN_TX.get().unwrap().clone();
     if !init_args.dev {
         let addr = init_args.addr.as_ref().unwrap().clone();
         runtime.spawn(async move {
@@ -135,6 +136,11 @@ pub fn run() {
 
         url.query_pairs_mut().append_pair("sdk", &init_args.sdk);
 
+        let (write_tx, write_rx) = mpsc::unbounded_channel::<(String, Vec<u8>)>();
+
+        GATEWAY_WRITE_CHAN_TX.set(write_tx).unwrap();
+
+        let read_tx = READ_CHAN_TX.get().unwrap().clone();
         let gateway = Gateway {
             dev: true,
             runway: url,
@@ -142,7 +148,7 @@ pub fn run() {
         };
 
         runtime.spawn(async move {
-            gateway.connect().await;
+            gateway.connect(write_rx).await;
         });
 
         // todo add package signature for querystring
@@ -154,18 +160,19 @@ pub fn read() {}
 pub async fn read_async() -> Option<Vec<u8>> {
     let read_rx = unsafe { READ_CHAN_RX.get_mut().unwrap() };
     let data = read_rx.recv().await;
-
     data
 }
 
 pub fn send_message(socket_id: String, payload: Vec<u8>) {
-    let sockets = SOCKETS.get().unwrap();
-    if let Some(socket) = sockets.get(&socket_id) {
-        // socket.send(payload).unwrap();
-        socket.write_chan_tx.send(payload).unwrap();
+    if let Some(gateway_write_tx) = GATEWAY_WRITE_CHAN_TX.get() {
+        gateway_write_tx.send((socket_id, payload)).unwrap();
         return;
     }
 
-    let write_tx = WRITE_CHAN_TX.get().unwrap();
-    write_tx.send((socket_id, payload)).unwrap();
+    let socket_chans = SOCKET_CHANS.get().unwrap();
+    if let Some(socket_chan) = socket_chans.get(&socket_id) {
+        socket_chan.send(Action::SendMessage(ActionSendMessage { payload }));
+
+        return;
+    }
 }

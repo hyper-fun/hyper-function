@@ -1,7 +1,12 @@
-use futures_util::{SinkExt, StreamExt};
+use std::time::Duration;
+
+use futures_util::StreamExt;
 use hyper::upgrade::Upgraded;
-use hyper_tungstenite::{tungstenite::Message, WebSocketStream};
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use hyper_tungstenite::WebSocketStream;
+use tokio::{
+    sync::mpsc::{UnboundedReceiver, UnboundedSender},
+    time::sleep,
+};
 
 use super::transport::{Packet, PacketMessage, Transport};
 
@@ -12,7 +17,26 @@ pub struct Socket {
     pub session_id: String,
     pub client_ts: u64,
     pub client_version: String,
-    pub write_chan_tx: UnboundedSender<Vec<u8>>,
+}
+
+pub enum Action {
+    SendOpen(ActionSendOpen),
+    SendPing(ActionSendPing),
+    SendMessage(ActionSendMessage),
+}
+
+#[derive(Debug)]
+pub struct ActionSendOpen {
+    pub ping_interval: i64,
+    pub ping_timeout: i64,
+}
+
+#[derive(Debug)]
+pub struct ActionSendPing {}
+
+#[derive(Debug)]
+pub struct ActionSendMessage {
+    pub payload: Vec<u8>,
 }
 
 impl Socket {
@@ -20,25 +44,44 @@ impl Socket {
         &self,
         stream: WebSocketStream<Upgraded>,
         read_chan_tx: UnboundedSender<Vec<u8>>,
-        mut write_chan_rx: UnboundedReceiver<Vec<u8>>,
+        socket_write_chan_tx: UnboundedSender<Action>,
+        mut socket_write_chan_rx: UnboundedReceiver<Action>,
     ) {
         let (mut sink, mut stream) = stream.split();
 
-        Transport::send_open_packet(&mut sink, 25, 20)
-            .await
-            .unwrap();
+        socket_write_chan_tx.send(Action::SendOpen(ActionSendOpen {
+            ping_interval: 25,
+            ping_timeout: 20,
+        }));
 
         let sink_task = tokio::spawn(async move {
-            while let Some(data) = write_chan_rx.recv().await {
-                Transport::send_message_packet(&mut sink, data)
-                    .await
-                    .unwrap();
+            while let Some(action) = socket_write_chan_rx.recv().await {
+                match action {
+                    Action::SendOpen(action) => {
+                        Transport::send_open_packet(
+                            &mut sink,
+                            action.ping_interval,
+                            action.ping_timeout,
+                        )
+                        .await;
+                    }
+                    Action::SendPing(action) => {
+                        Transport::send_ping_packet(&mut sink).await;
+                    }
+                    Action::SendMessage(action) => {
+                        println!("send message action: {:?}", action);
+                        Transport::send_message_packet(&mut sink, action.payload).await;
+                    }
+                }
             }
         });
 
         let socket_id = self.id.clone();
+        let mut last_heartbeat = chrono::Utc::now().timestamp();
+
         let stream_task = tokio::spawn(async move {
             while let Some(packets) = Transport::next(&mut stream).await {
+                last_heartbeat = chrono::Utc::now().timestamp();
                 for packet in packets {
                     match packet {
                         Packet::OPEN(open) => {
@@ -53,15 +96,6 @@ impl Socket {
                         Packet::PONG(pong) => {
                             println!("pong: {:?}", pong);
                         }
-                        Packet::RETRY(retry) => {
-                            println!("retry: {:?}", retry);
-                        }
-                        Packet::RESET(reset) => {
-                            println!("reset: {:?}", reset);
-                        }
-                        Packet::REDIRECT(redirect) => {
-                            println!("redirect: {:?}", redirect);
-                        }
                         Packet::MESSAGE(msg) => {
                             let data = Socket::encode_message(&socket_id, msg);
                             read_chan_tx
@@ -71,14 +105,35 @@ impl Socket {
                         Packet::ACK(ack) => {
                             println!("ack: {:?}", ack);
                         }
+                        // nothing todo
+                        _ => {}
                     }
                 }
             }
+        });
 
-            sink_task.abort();
+        let socket_write_chan_tx = socket_write_chan_tx.clone();
+        let heartbeat_task = tokio::spawn(async move {
+            loop {
+                let now = chrono::Utc::now().timestamp();
+                if now - last_heartbeat > 25 + 20 {
+                    // close
+
+                    // &stream_task.abort();
+                    return;
+                }
+
+                // send ping
+                socket_write_chan_tx.send(Action::SendPing(ActionSendPing {}));
+                sleep(Duration::from_secs(25)).await
+            }
         });
 
         stream_task.await.unwrap();
+        sink_task.abort();
+        heartbeat_task.abort();
+
+        println!("socket closed");
     }
 
     fn encode_message(socket_id: &str, mut msg: PacketMessage) -> Vec<u8> {

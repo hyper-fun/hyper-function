@@ -9,10 +9,6 @@ use hyper_tungstenite::{
     tungstenite::{Error, Message},
     WebSocketStream,
 };
-use tokio::{
-    sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
-    task::JoinHandle,
-};
 
 pub enum Packet {
     OPEN(PacketOpen),
@@ -103,6 +99,33 @@ impl Transport {
         }
     }
 
+    pub async fn send_packet(
+        sink: &mut SplitSink<WebSocketStream<Upgraded>, Message>,
+        packet: Packet,
+    ) {
+        match packet {
+            Packet::OPEN(open) => {
+                println!("open: {:?}", open);
+            }
+            Packet::CLOSE(close) => {
+                println!("close: {:?}", close);
+            }
+            Packet::PING(ping) => {
+                println!("ping: {:?}", ping);
+            }
+            Packet::PONG(pong) => {
+                println!("pong: {:?}", pong);
+            }
+            Packet::MESSAGE(msg) => {
+                println!("msg: {:?}", msg);
+            }
+            Packet::ACK(ack) => {
+                println!("ack: {:?}", ack);
+            }
+            _ => {}
+        }
+    }
+
     pub async fn send_open_packet(
         sink: &mut SplitSink<WebSocketStream<Upgraded>, Message>,
         ping_interval: i64,
@@ -112,6 +135,16 @@ impl Transport {
         rmp::encode::write_sint(&mut data, 1).unwrap();
         rmp::encode::write_sint(&mut data, ping_interval).unwrap();
         rmp::encode::write_sint(&mut data, ping_timeout).unwrap();
+
+        sink.send(Message::Binary(data)).await?;
+        Ok(())
+    }
+
+    pub async fn send_ping_packet(
+        sink: &mut SplitSink<WebSocketStream<Upgraded>, Message>,
+    ) -> Result<(), Error> {
+        let mut data = Vec::with_capacity(1);
+        rmp::encode::write_sint(&mut data, 6).unwrap();
 
         sink.send(Message::Binary(data)).await?;
         Ok(())

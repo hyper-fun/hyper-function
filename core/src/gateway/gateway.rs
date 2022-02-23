@@ -3,7 +3,6 @@ use tokio::sync::mpsc;
 
 use crate::gateway::transport::Packet;
 
-use super::super::WRITE_CHAN_RX;
 use super::transport::{PacketMessage, Transport};
 
 pub struct Gateway {
@@ -13,7 +12,7 @@ pub struct Gateway {
 }
 
 impl Gateway {
-    pub async fn connect(&self) {
+    pub async fn connect(&self, mut write_rx: mpsc::UnboundedReceiver<(String, Vec<u8>)>) {
         let stream = Transport::connect(self.runway.clone())
             .await
             .expect("failed to connect to devtools");
@@ -21,52 +20,47 @@ impl Gateway {
         let (mut sink, mut stream) = stream.split();
 
         let sink_task = tokio::spawn(async move {
-            let write_rx = unsafe { WRITE_CHAN_RX.get_mut().unwrap() };
             while let Some(data) = write_rx.recv().await {
                 Transport::send_message(&mut sink, data).await.unwrap();
             }
         });
 
         let read_tx = self.read_tx.clone();
-        let stream_task = tokio::spawn(async move {
-            while let Some(packets) = Transport::next(&mut stream).await {
-                for packet in packets {
-                    match packet {
-                        Packet::OPEN(open) => {
-                            println!("open: {:?}", open);
-                        }
-                        Packet::CLOSE(close) => {
-                            println!("close: {:?}", close);
-                        }
-                        Packet::PING(ping) => {
-                            println!("ping: {:?}", ping);
-                        }
-                        Packet::PONG(pong) => {
-                            println!("pong: {:?}", pong);
-                        }
-                        Packet::RETRY(retry) => {
-                            println!("retry: {:?}", retry);
-                        }
-                        Packet::REDIRECT(redirect) => {
-                            println!("redirect: {:?}", redirect);
-                        }
-                        Packet::MESSAGE(msg) => {
-                            let data = Gateway::encode_message(msg);
-                            read_tx
-                                .send(data)
-                                .expect("failed to send message to read_tx");
-                        }
-                        Packet::ACK(ack) => {
-                            println!("ack: {:?}", ack);
-                        }
+        while let Some(packets) = Transport::next(&mut stream).await {
+            for packet in packets {
+                match packet {
+                    Packet::OPEN(open) => {
+                        println!("open: {:?}", open);
+                    }
+                    Packet::CLOSE(close) => {
+                        println!("close: {:?}", close);
+                    }
+                    Packet::PING(ping) => {
+                        println!("ping: {:?}", ping);
+                    }
+                    Packet::PONG(pong) => {
+                        println!("pong: {:?}", pong);
+                    }
+                    Packet::RETRY(retry) => {
+                        println!("retry: {:?}", retry);
+                    }
+                    Packet::REDIRECT(redirect) => {
+                        println!("redirect: {:?}", redirect);
+                    }
+                    Packet::MESSAGE(msg) => {
+                        let data = Gateway::encode_message(msg);
+                        read_tx
+                            .send(data)
+                            .expect("failed to send message to read_tx");
+                    }
+                    Packet::ACK(ack) => {
+                        println!("ack: {:?}", ack);
                     }
                 }
             }
+        }
 
-            sink_task.abort();
-        });
-
-        stream_task.await.unwrap();
+        sink_task.abort();
         println!("Devtools connection closed");
     }
 
