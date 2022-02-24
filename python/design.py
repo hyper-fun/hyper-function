@@ -1,20 +1,23 @@
-class HomeViewModule:
-    name = 'hahah'
+class HomeView:
+    name = 'eee'
+    age = '2'
+
+    def __init__(self):
+        print('HomeView.__init__')
+        self.age = '18'
 
     def show(self, ctx):
-        print('HomeViewModule.show ' + ctx)
+        print('HomeView.show ' + self.name + ctx + ':' + self.age)
 
     def hide(ctx):
-        print('HomeViewModule.hide')
+        print('HomeView.hide')
 
 
-def get_methods(c):
-    return list(filter(lambda x: not x.startswith('__') and callable(getattr(c, x)), dir(c)))
-
-
-print(HomeViewModule.__name__)
-print(get_methods(HomeViewModule))
-
-homeView = HomeViewModule()
+homeView = HomeView.__new__(HomeView)
+homeView.__init__()
+homeView.show('fwefwe')
 fn = getattr(homeView, 'show')
 fn('ahaha')
+
+print('aasss' in ['aass'])
+print(isinstance(b'ababa', bytes))

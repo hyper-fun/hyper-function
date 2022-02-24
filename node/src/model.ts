@@ -25,21 +25,21 @@ export class Model {
   }
 
   set(key: string, value: any) {
-    if (typeof value === "undefined") return;
+    if (typeof value === "undefined") return false;
     const field = this.schema.fields.get(key);
-    if (!field) return;
+    if (!field) return false;
 
     const valueIsArray = Array.isArray(value);
-    if (field.isArray !== valueIsArray) return;
+    if (field.isArray !== valueIsArray) return false;
 
     if (field.type.length === 1) {
       // basic type
       if (valueIsArray) {
         for (let i = 0; i < value.length; i++) {
-          value[i] = processType(value[i], field.type);
+          if (!checkType(value[i], field.type)) return false;
         }
       } else {
-        value = processType(value, field.type);
+        if (!checkType(value, field.type)) return false;
       }
     } else {
       // model type
@@ -68,7 +68,7 @@ export class Model {
     }
 
     this.data[key] = value;
-    return;
+    return true;
   }
   get(key: string) {
     return this.data[key];
@@ -195,34 +195,19 @@ export class Model {
   }
 }
 
-function processType(value: any, type: string) {
-  if (type === "s") {
-    return typeof value === "string" ? value : String(value);
-  }
-
-  if (type === "i") {
-    value = typeof value === "number" ? value : parseInt(value, 10);
-    value = value % 1 === 0 ? value : Math.floor(value);
-
-    if (isNaN(value)) value = 0;
-    if (value > 2147483647) value = 2147483647;
-    if (value < -2147483648) value = -2147483648;
-
-    return value;
-  }
-
-  if (type === "f") {
-    value = parseFloat(value);
-    if (isNaN(value)) value = 0;
-
-    return value;
-  }
-
-  if (type === "b") {
-    return typeof value === "boolean" ? value : Boolean(value);
-  }
-
-  if (type === "t") {
-    return value instanceof Uint8Array ? value : new Uint8Array([]);
+function checkType(value: any, type: string): boolean {
+  switch (type) {
+    case "s":
+      return value === value + "";
+    case "i":
+      return (
+        Number.isInteger(value) && value <= 2147483647 && value >= -2147483648
+      );
+    case "f":
+      return !isNaN(value) && typeof value === "number";
+    case "b":
+      return value === !!value;
+    case "t":
+      return value instanceof Uint8Array;
   }
 }

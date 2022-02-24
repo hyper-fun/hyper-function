@@ -140,7 +140,7 @@ export function run(
     }
 
     const model = result.models.find(
-      (m) => m.schema_id === schemaConfig.id && m.package_id === schema.pkgId
+      (m) => m.schema_id === schema.id && m.package_id === schema.pkgId
     );
 
     if (model) {
@@ -162,7 +162,7 @@ export function run(
     }
 
     const hfn = result.hfns.find(
-      (n) => n.schema_id === schemaConfig.id && n.package_id === schema.pkgId
+      (n) => n.schema_id === schema.id && n.package_id === schema.pkgId
     );
 
     if (hfn) {

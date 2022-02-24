@@ -10,7 +10,7 @@ use std::{env, fs::read_to_string, path::Path};
 use once_cell::sync::OnceCell;
 use tokio::{
     runtime::{Builder, Runtime},
-    sync::mpsc,
+    sync::mpsc::{self, error::TryRecvError},
 };
 
 mod codec;
@@ -155,7 +155,28 @@ pub fn run() {
     }
 }
 
-pub fn read() {}
+pub fn read() -> Option<Vec<u8>> {
+    let read_rx = unsafe { READ_CHAN_RX.get_mut().unwrap() };
+    let data = read_rx.blocking_recv();
+    data
+}
+
+pub enum TryReadRes {
+    DATA(Vec<u8>),
+    EMPTY,
+    CLOSED,
+}
+
+pub fn try_read() -> TryReadRes {
+    let read_rx = unsafe { READ_CHAN_RX.get_mut().unwrap() };
+    match read_rx.try_recv() {
+        Ok(data) => TryReadRes::DATA(data),
+        Err(e) => match e {
+            TryRecvError::Empty => TryReadRes::EMPTY,
+            TryRecvError::Disconnected => TryReadRes::CLOSED,
+        },
+    }
+}
 
 pub async fn read_async() -> Option<Vec<u8>> {
     let read_rx = unsafe { READ_CHAN_RX.get_mut().unwrap() };
