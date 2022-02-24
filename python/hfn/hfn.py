@@ -1,6 +1,7 @@
-from time import sleep
 import msgpack
 import hfn_core
+from model import Model
+from context import Context
 from concurrent.futures import ThreadPoolExecutor
 
 
@@ -13,7 +14,7 @@ def run(packages, **kwargs):
     pkg_names = list(map(lambda x: x.name, packages))
 
     result = msgpack.unpackb(hfn_core.init(msgpack.packb({
-        "dev": False,
+        "dev": kwargs.get('dev', True),
         "addr": "[::1]:3000",
         "sdk": "python-0.1.0",
         "hfn_config_path": "/Users/afei/Desktop/aefe/hfn.json",
@@ -48,8 +49,8 @@ def run(packages, **kwargs):
                 id = '-'.join([str(pkg_config['id']), str(mod_config['id']),
                                str(hfn_config['id'])])
 
-                handlers.setdefault(id, getattr(
-                    mod['instance'], hfn_config['name']))
+                handlers[id] = getattr(
+                    mod['instance'], hfn_config['name'])
 
     schemas = {}
     for schema_config in result['schemas']:
@@ -72,8 +73,8 @@ def run(packages, **kwargs):
                 'schema_id': field_config['schema_id']
             }
 
-            schema['fields'].setdefault(field['name'], field)
-            schema['fields'].setdefault(field['id'], field)
+            schema['fields'][field['id']] = field
+            schema['fields'][field['name']] = field
 
         model = list(filter(
             lambda x: x['schema_id'] == schema['id'] and x['package_id'] == schema['pkg_id'], result['models']))
@@ -81,7 +82,7 @@ def run(packages, **kwargs):
         if len(model) > 0:
             model = model[0]
             if model['name'] == '':
-                schema.setdefault('module_id', model['module_id'])
+                schema['module_id'] = model['module_id']
 
             pkg = list(filter(lambda x: x['id'] ==
                        model['package_id'], result['packages']))[0]
@@ -92,19 +93,18 @@ def run(packages, **kwargs):
             key = ('' if pkg['id'] == 0 else pkg['name'] + '.') + \
                 mod['name'] + '.' + ('State' if model['name']
                                      == '' else model['name'])
-
-            schemas.setdefault(key, schema)
+            schemas[key] = schema
 
             id_key = '-'.join(['model', str(pkg['id']),
                               str(mod['id']), str(model['id'])])
-            schemas.setdefault(id_key, schema)
+            schemas[id_key] = schema
 
         hfn = list(filter(
             lambda x: x['schema_id'] == schema['id'] and x['package_id'] == schema['pkg_id'], result['hfns']))
 
         if len(hfn) > 0:
             hfn = hfn[0]
-            schema.setdefault('hfn_id', hfn['id'])
+            schema['hfn_id'] = hfn['id']
 
             pkg = list(filter(lambda x: x['id'] ==
                        hfn['package_id'], result['packages']))[0]
@@ -115,13 +115,17 @@ def run(packages, **kwargs):
             key = ('' if pkg['id'] == 0 else pkg['name'] + '.') + \
                 mod['name'] + '.' + hfn['name']
 
-            schemas.setdefault(key, schema)
+            schemas[key] = schema
 
             id_key = '-'.join(['hfn', str(pkg['id']),
                               str(mod['id']), str(hfn['id'])])
-            schemas.setdefault(id_key, schema)
+            schemas[id_key] = schema
+
+        schemas[str(schema['pkg_id']) + '-' + str(schema['id'])] = schema
 
     hfn_core.run()
+
+    executor = ThreadPoolExecutor(kwargs.get('max_workers'))
 
     def event_loop():
         while True:
@@ -137,6 +141,7 @@ def run(packages, **kwargs):
 
             if msg[0] == 1:
                 _, module_id, hfn_id, cookies, data = msg
+
                 handler_id = '-'.join([str(pkg_id),
                                       str(module_id), str(hfn_id)])
                 schema = schemas.get('hfn-' + handler_id)
@@ -147,7 +152,22 @@ def run(packages, **kwargs):
                 if not handler:
                     continue
 
-                handler('balaaa')
+                model = Model(schema, schemas)
 
-    executor = ThreadPoolExecutor(kwargs.get('max_workers'))
-    executor.submit(event_loop)
+                model.decode(data)
+
+                ctx = Context(
+                    package_id=pkg_id,
+                    socket_id=socket_id,
+                    headers=headers,
+                    cookies=cookies,
+                    data=model,
+                    module_id=module_id,
+                    hfn_id=hfn_id,
+                    schemas=schemas
+                )
+
+                executor.submit(handler, (ctx))
+
+    task = executor.submit(event_loop)
+    task.result()

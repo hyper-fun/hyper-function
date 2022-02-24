@@ -21,3 +21,10 @@ fn('ahaha')
 
 print('aasss' in ['aass'])
 print(isinstance(b'ababa', bytes))
+a = {}
+a['a'] = 1
+a['c'] = 1
+
+del a['e']
+print(a['a'])
+print(list(a.keys()))

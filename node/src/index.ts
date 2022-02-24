@@ -71,7 +71,7 @@ export function run(
   const result: InitResult = msgpack.decode(
     core.init(
       msgpack.encode({
-        dev: false,
+        dev: true,
         addr: "[::1]:3000",
         sdk: "node-" + pkg.version,
         hfn_config_path: "/Users/afei/Desktop/aefe/hfn.json",
@@ -230,7 +230,25 @@ run([
         console.log(ctx.headers);
         console.log(ctx.data.toObject());
         const state = ctx.model("homeView.State");
-        state.set("regreg", "blabla!!❤️");
+        state.set("str", "blabla!!❤️");
+        state.set("strArr", ["1", "2", "4"]);
+        state.set("int", 123);
+        state.set("intArr", [123, 234, 456]);
+        state.set("float", 1.2);
+        state.set("floatArr", [2.3, 3.4, 5.5]);
+        state.set("bool", true);
+        state.set("boolArr", [true, false, true]);
+        state.set("bytes", new Uint8Array([0xab]));
+        state.set("bytesArr", [
+          new Uint8Array([0xab]),
+          new Uint8Array([0xcd]),
+          new Uint8Array([0xef]),
+        ]);
+        const nested = ctx.model("homeView.ahaha");
+        nested.set("id", 2323);
+        nested.set("s", "baba");
+        state.set("nested", nested);
+        state.set("nestedArr", [nested, nested, nested]);
 
         ctx.render(state);
       }

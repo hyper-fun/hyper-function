@@ -30,5 +30,10 @@ fn hfn_core(_py: Python, m: &PyModule) -> PyResult<()> {
         }
     }
 
+    #[pyfn(m)]
+    pub fn send_message(socket_id: String, payload: Vec<u8>) {
+        hyper_function_core::send_message(socket_id, payload);
+    }
+
     Ok(())
 }
