@@ -148,10 +148,10 @@ export function run(
         schema.moduleId = model.module_id;
       }
 
-      const pkg = result.packages.find((pkg) => pkg.id === model.package_id);
+      const pkg = result.packages.find((pkg) => pkg.id === model.package_id)!;
       const mod = result.modules.find(
         (m) => m.id === model.module_id && m.package_id === model.package_id
-      );
+      )!;
 
       const key = `${pkg.id === 0 ? "" : pkg.name + "."}${mod.name}.${
         model.name || "State"
@@ -168,10 +168,10 @@ export function run(
     if (hfn) {
       schema.hfnId = hfn.id;
 
-      const pkg = result.packages.find((pkg) => pkg.id === hfn.package_id);
+      const pkg = result.packages.find((pkg) => pkg.id === hfn.package_id)!;
       const mod = result.modules.find(
         (m) => m.id === hfn.module_id && m.package_id === hfn.package_id
-      );
+      )!;
 
       const key = `${pkg.id === 0 ? "" : pkg.name + "."}${mod.name}.${
         hfn.name
@@ -199,7 +199,7 @@ export function run(
         case 1: {
           const [_, moduleId, hfnId, cookies, data] = msg;
           const id = `${pkgId}-${moduleId}-${hfnId}`;
-          const schema = schemas.get(`hfn-${id}`);
+          const schema = schemas.get(`hfn-${id}`)!;
           const dataModel = new Model(schema, schemas);
           if (data) dataModel.decode(data);
 
@@ -223,35 +223,35 @@ export function run(
   })();
 }
 
-run([
-  new HyperFunctionPackage([
-    class HomeView {
-      mount(ctx: Context) {
-        console.log(ctx.headers);
-        console.log(ctx.data.toObject());
-        const state = ctx.model("homeView.State");
-        state.set("str", "blabla!!❤️");
-        state.set("strArr", ["1", "2", "4"]);
-        state.set("int", 123);
-        state.set("intArr", [123, 234, 456]);
-        state.set("float", 1.2);
-        state.set("floatArr", [2.3, 3.4, 5.5]);
-        state.set("bool", true);
-        state.set("boolArr", [true, false, true]);
-        state.set("bytes", new Uint8Array([0xab]));
-        state.set("bytesArr", [
-          new Uint8Array([0xab]),
-          new Uint8Array([0xcd]),
-          new Uint8Array([0xef]),
-        ]);
-        const nested = ctx.model("homeView.ahaha");
-        nested.set("id", 2323);
-        nested.set("s", "baba");
-        state.set("nested", nested);
-        state.set("nestedArr", [nested, nested, nested]);
+// run([
+//   new HyperFunctionPackage([
+//     class HomeView {
+//       mount(ctx: Context) {
+//         console.log(ctx.headers);
+//         console.log(ctx.data.toObject());
+//         const state = ctx.model("homeView.State");
+//         state.set("str", "blabla!!❤️");
+//         state.set("strArr", ["1", "2", "4"]);
+//         state.set("int", 123);
+//         state.set("intArr", [123, 234, 456]);
+//         state.set("float", 1.2);
+//         state.set("floatArr", [2.3, 3.4, 5.5]);
+//         state.set("bool", true);
+//         state.set("boolArr", [true, false, true]);
+//         state.set("bytes", new Uint8Array([0xab]));
+//         state.set("bytesArr", [
+//           new Uint8Array([0xab]),
+//           new Uint8Array([0xcd]),
+//           new Uint8Array([0xef]),
+//         ]);
+//         const nested = ctx.model("homeView.ahaha");
+//         nested.set("id", 2323);
+//         nested.set("s", "baba");
+//         state.set("nested", nested);
+//         state.set("nestedArr", [nested, nested, nested]);
 
-        ctx.render(state);
-      }
-    },
-  ]),
-]);
+//         ctx.render(state);
+//       }
+//     },
+//   ]),
+// ]);

@@ -87,7 +87,7 @@ export class Model {
     const dataArr = [];
     for (let i = 0; i < keys.length; i++) {
       const key = keys[i];
-      const field = this.schema.fields.get(key);
+      const field = this.schema.fields.get(key)!;
       dataArr.push(field.id);
 
       let value;
@@ -161,13 +161,13 @@ export class Model {
           this.set(
             key,
             obj[key].map((item: any) => {
-              const m = new Model(this.schemas.get(field.type), this.schemas);
+              const m = new Model(this.schemas.get(field.type)!, this.schemas);
               m.fromObject(item);
               return m;
             })
           );
         } else {
-          const m = new Model(this.schemas.get(field.type), this.schemas);
+          const m = new Model(this.schemas.get(field.type)!, this.schemas);
           m.fromObject(obj[key]);
           this.set(key, m);
         }
@@ -209,5 +209,7 @@ function checkType(value: any, type: string): boolean {
       return value === !!value;
     case "t":
       return value instanceof Uint8Array;
+    default:
+      return false;
   }
 }
