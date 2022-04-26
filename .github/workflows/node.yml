@@ -104,7 +104,7 @@ jobs:
     runs-on: ${{ matrix.settings.host }}
     defaults:
       run:
-        working-directory: ./node
+        working-directory: node
     steps:
       - uses: actions/checkout@v2
       - name: Setup node
@@ -113,6 +113,7 @@ jobs:
           node-version: 16
           check-latest: true
           cache: yarn
+          cache-dependency-path: node/yarn.lock
           architecture: ${{ matrix.settings.architecture }}
       - name: Install
         uses: actions-rs/toolchain@v1
@@ -121,11 +122,9 @@ jobs:
           override: true
           toolchain: stable
           target: ${{ matrix.settings.target }}
-
       - name: Generate Cargo.lock
-        uses: actions-rs/cargo@v1
-        with:
-          command: generate-lockfile
+        run: cargo generate-lockfile
+
       - name: Cache cargo registry
         uses: actions/cache@v2
         with:
@@ -139,8 +138,9 @@ jobs:
       - name: Cache NPM dependencies
         uses: actions/cache@v2
         with:
-          path: node_modules
-          key: npm-cache-${{ matrix.settings.target }}-node@16-${{ hashFiles('yarn.lock') }}
+          path: node/node_modules
+          key: npm-cache-${{ matrix.settings.target }}-node@16-${{ hashFiles('node/yarn.lock') }}
+
       - name: Pull latest image
         run: ${{ matrix.settings.docker }}
         env:
@@ -166,7 +166,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ./node
+        working-directory: node
     needs:
       - build
       # - build-freebsd
@@ -184,31 +184,36 @@ jobs:
           node-version: 16
           check-latest: true
           cache: yarn
+          cache-dependency-path: node/yarn.lock
       - name: Cache NPM dependencies
         uses: actions/cache@v2
         with:
-          path: node_modules
-          key: npm-cache-ubuntu-latest-${{ hashFiles('yarn.lock') }}
+          path: node/node_modules
+          key: npm-cache-ubuntu-latest-${{ hashFiles('node/yarn.lock') }}
           restore-keys: |
             npm-cache-
       - name: Install dependencies
         run: yarn install --ignore-scripts --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
+
       - name: Download all artifacts
         uses: actions/download-artifact@v2
         with:
-          path: artifacts
+          path: node/artifacts
+      - name: Move out artifacts
+        run: mv artifacts/**/*.node . && rm -rf artifacts
+
       - name: Publish
         run: |
-          mv artifacts/**/*.node .
           echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" >> ~/.npmrc
-          test -z "$PUBLISH_TO_NPM" || yarn publish --access=public --registry=registry.npmjs.org --non-interactive
-          yarn pack -f hfn.tgz
+          yarn publish --access=public --registry=registry.npmjs.org --non-interactive
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          PUBLISH_TO_NPM: ${{ contains(github.event.head_commit.message, 'release(node)') }}
+        if: ${{ contains(github.event.head_commit.message, 'release(node)') }}
+
+      - name: Build artifact
+        run: yarn pack -f hfn.tgz
       - name: Upload artifact
         uses: actions/upload-artifact@v2
         with:
           name: hfn.tgz
-          path: ./hfn.tgz
+          path: node/hfn.tgz
