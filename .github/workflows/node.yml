@@ -201,6 +201,9 @@ jobs:
       - name: Move out artifacts
         run: mv artifacts/**/*.node . && rm -rf artifacts
 
+      - name: Build js
+        run: yarn build:js
+
       - name: Publish
         run: |
           echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" >> ~/.npmrc
