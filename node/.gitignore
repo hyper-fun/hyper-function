@@ -4,3 +4,5 @@ target
 package-lock.json
 dist
 core.*
+!core.d.ts
+!core.js
