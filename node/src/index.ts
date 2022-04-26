@@ -1,13 +1,17 @@
-import core from "../core";
+import fs from "fs";
+import path from "path";
 
-import pkg from "../package.json";
-import { HyperFunctionPackage } from "./package";
-import { Model, Schema } from "./model";
+import core from "../core";
 import msgpack from "./msgpack";
+import { Package } from "./package";
+import { Model, Schema } from "./model";
 import { Context } from "./context";
+
+export { Package, Context, Model };
 
 interface RunOptions {
   dev: boolean;
+  addr?: string;
   hfnConfigPath?: string;
 }
 
@@ -58,9 +62,13 @@ interface InitResult {
   }[];
 }
 
+const pkgJson = JSON.parse(
+  fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf-8")
+);
+
 export function run(
-  packages: HyperFunctionPackage[],
-  opts: RunOptions = { dev: false }
+  packages: Package[],
+  opts: RunOptions = { dev: true, addr: "[::1]:3000" }
 ) {
   const mainPkg = packages.find((pkg) => pkg.name === "");
   if (!mainPkg) {
@@ -68,23 +76,25 @@ export function run(
   }
 
   const pkgNames = packages.map((pkg) => pkg.name);
+  const initArgs: any = {
+    dev: opts.dev,
+    addr: opts.addr,
+    sdk: "node-" + pkgJson.version,
+    pkg_names: pkgNames,
+  };
+  if (opts.hfnConfigPath) initArgs.hfn_config_path = opts.hfnConfigPath;
+
   const result: InitResult = msgpack.decode(
-    core.init(
-      msgpack.encode({
-        dev: true,
-        addr: "[::1]:3000",
-        sdk: "node-" + pkg.version,
-        hfn_config_path: "/Users/afei/Desktop/aefe/hfn.json",
-        pkg_names: pkgNames,
-      })
-    )
+    core.init(msgpack.encode(initArgs))
   );
 
+  const pkgs = new Map<number, Package>();
   const handlers = new Map<string, (ctx: Context) => void>();
 
   for (const pkgConfig of result.packages) {
     const pkg = packages.find((pkg) => pkg.name === pkgConfig.name);
     if (!pkg) continue;
+    pkgs.set(pkgConfig.id, pkg);
 
     let modConfigs = result.modules.filter(
       (mod) => mod.package_id === pkgConfig.id
@@ -197,26 +207,34 @@ export function run(
       const msg = msgpack.decode(payload, true);
       switch (msg[0]) {
         case 1: {
-          const [_, moduleId, hfnId, cookies, data] = msg;
+          const [_, moduleId, hfnId, cookies, body] = msg;
           const id = `${pkgId}-${moduleId}-${hfnId}`;
+          const handler = handlers.get(id);
+          if (!handler) break;
+
           const schema = schemas.get(`hfn-${id}`)!;
-          const dataModel = new Model(schema, schemas);
-          if (data) dataModel.decode(data);
+          const bodyModel = new Model(schema, schemas);
+          if (body) bodyModel.decode(body);
+
+          const pkg = pkgs.get(pkgId)!;
 
           const context = new Context(
             pkgId,
+            pkg,
             socketId,
             headers,
             cookies,
-            dataModel,
+            bodyModel,
             {
               moduleId,
               hfnId,
               schemas,
             }
           );
-          const handler = handlers.get(id);
-          if (handler) handler(context);
+
+          await pkg.runBeforeHfnHooks(context);
+          await handler(context);
+          await pkg.runAfterHfnHooks(context);
         }
       }
     }

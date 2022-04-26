@@ -30,7 +30,7 @@ impl Gateway {
             for packet in packets {
                 match packet {
                     Packet::OPEN(open) => {
-                        println!("open: {:?}", open);
+                        println!("gateway open: {:?}", open);
                     }
                     Packet::CLOSE(close) => {
                         println!("close: {:?}", close);

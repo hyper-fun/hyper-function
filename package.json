@@ -37,6 +37,27 @@
           "ruby",
           "rust"
         ]
+      ],
+      "type-enum": [
+        2,
+        "always",
+        [
+          "feat",
+          "fix",
+          "docs",
+          "style",
+          "refactor",
+          "perf",
+          "test",
+          "workflow",
+          "build",
+          "ci",
+          "chore",
+          "types",
+          "revert",
+          "wip",
+          "release"
+        ]
       ]
     }
   }

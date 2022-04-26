@@ -4,13 +4,36 @@
   "description": "",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
-    "build:watch": "npm run build -- --watch",
-    "core:build": "napi build --dts=core.d.ts",
+    "build:js": "tsc",
+    "build:js:watch": "npm run build -- --watch",
+    "build": "napi build --platform --js=core.js --dts=core.d.ts --release",
+    "build:debug": "napi build --platform --dts=core.d.ts --platform",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "files": [
+    "dist",
+    "core.*"
+  ],
   "napi": {
-    "name": "core"
+    "name": "core",
+    "triples": {
+      "defaults": true,
+      "additional": [
+        "x86_64-unknown-linux-musl",
+        "i686-pc-windows-msvc",
+        "aarch64-unknown-linux-gnu",
+        "aarch64-apple-darwin",
+        "aarch64-unknown-linux-musl",
+        "aarch64-pc-windows-msvc"
+      ]
+    }
+  },
+  "engines": {
+    "node": ">= 12"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
   },
   "keywords": [],
   "author": "",

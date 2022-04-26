@@ -1,14 +1,17 @@
 import core from "../core";
 import { Model, Schema } from "./model";
 import msgpack from "./msgpack";
+import { Package } from "./package";
 
 export class Context {
+  public data: Record<string, any> = {};
   constructor(
     public packageId: number,
+    public pkg: Package,
     public socketId: string,
     public headers: Record<string, string>,
     public cookies: Record<string, string>,
-    public data: Model,
+    public body: Model,
     private opts: {
       moduleId?: number;
       hfnId?: number;
@@ -17,13 +20,14 @@ export class Context {
   ) {
     const {} = opts;
   }
-  render(state: Model) {
-    return this.setState(state);
+  async render(state: Model) {
+    return await this.setState(state);
   }
-  setState(state: Model) {
+  async setState(state: Model) {
     // not state model
     if (!state.schema.moduleId) return;
 
+    await this.pkg.runOnSetStateHooks(this, state);
     const payload = msgpack.encode(
       [2, state.schema.pkgId, state.schema.moduleId, state.encode()],
       true

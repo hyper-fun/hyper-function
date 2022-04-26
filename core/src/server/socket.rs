@@ -99,7 +99,7 @@ impl Socket {
                 for packet in packets {
                     match packet {
                         Packet::OPEN(open) => {
-                            println!("open: {:?}", open);
+                            println!("socket open: {:?}", open);
                         }
                         Packet::CLOSE(close) => {
                             close_tx_clone.send(()).await;
