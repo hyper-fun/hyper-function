@@ -7,7 +7,7 @@
     "build:js": "tsc",
     "build:js:watch": "npm run build -- --watch",
     "build": "napi build --platform --js=core.js --dts=core.d.ts --release",
-    "build:debug": "napi build --platform --dts=core.d.ts --platform",
+    "build:debug": "napi build --platform  --js=core.js --dts=core.d.ts --platform",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "files": [

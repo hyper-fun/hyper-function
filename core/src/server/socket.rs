@@ -99,17 +99,17 @@ impl Socket {
                 for packet in packets {
                     match packet {
                         Packet::OPEN(open) => {
-                            println!("socket open: {:?}", open);
+                            // println!("socket open: {:?}", open);
                         }
                         Packet::CLOSE(close) => {
                             close_tx_clone.send(()).await;
                             return;
                         }
                         Packet::PING(ping) => {
-                            println!("ping: {:?}", ping);
+                            // println!("ping: {:?}", ping);
                         }
                         Packet::PONG(pong) => {
-                            println!("pong: {:?}", pong);
+                            // println!("pong: {:?}", pong);
                         }
                         Packet::MESSAGE(msg) => {
                             let data = Socket::encode_message(&socket_id, msg);
@@ -118,7 +118,7 @@ impl Socket {
                                 .expect("failed to send message to read_tx");
                         }
                         Packet::ACK(ack) => {
-                            println!("ack: {:?}", ack);
+                            // println!("ack: {:?}", ack);
                         }
                         // nothing todo
                         _ => {}

@@ -30,22 +30,22 @@ impl Gateway {
             for packet in packets {
                 match packet {
                     Packet::OPEN(open) => {
-                        println!("gateway open: {:?}", open);
+                        println!("connected to gateway");
                     }
                     Packet::CLOSE(close) => {
-                        println!("close: {:?}", close);
+                        // println!("close: {:?}", close);
                     }
                     Packet::PING(ping) => {
-                        println!("ping: {:?}", ping);
+                        // println!("ping: {:?}", ping);
                     }
                     Packet::PONG(pong) => {
-                        println!("pong: {:?}", pong);
+                        // println!("pong: {:?}", pong);
                     }
                     Packet::RETRY(retry) => {
-                        println!("retry: {:?}", retry);
+                        // println!("retry: {:?}", retry);
                     }
                     Packet::REDIRECT(redirect) => {
-                        println!("redirect: {:?}", redirect);
+                        // println!("redirect: {:?}", redirect);
                     }
                     Packet::MESSAGE(msg) => {
                         let data = Gateway::encode_message(msg);
@@ -54,7 +54,7 @@ impl Gateway {
                             .expect("failed to send message to read_tx");
                     }
                     Packet::ACK(ack) => {
-                        println!("ack: {:?}", ack);
+                        // println!("ack: {:?}", ack);
                     }
                 }
             }
