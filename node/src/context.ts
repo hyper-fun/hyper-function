@@ -28,13 +28,13 @@ export class Context {
     if (!state.schema.moduleId) return;
 
     await this.pkg.runOnSetStateHooks(this, state);
-    const payload = msgpack.encode(
+    const args = msgpack.encode(
       [2, state.schema.pkgId, state.schema.moduleId, state.encode()],
       true
     );
     core.sendMessage(
       this.socketId,
-      msgpack.encode([0, this.packageId, {}, payload], true)
+      msgpack.encode([0, this.packageId, {}, args], true)
     );
   }
   model(name: string) {
@@ -46,10 +46,18 @@ export class Context {
     return model;
   }
   setCookie(name: string, value: string, maxAge: number = 0, isPrivate = true) {
-    const payload = msgpack.encode([3, name, value, maxAge, isPrivate], true);
+    const args = msgpack.encode([3, name, value, maxAge, isPrivate], true);
     core.sendMessage(
       this.socketId,
-      msgpack.encode([0, this.packageId, {}, payload], true)
+      msgpack.encode([0, this.packageId, {}, args], true)
+    );
+  }
+  hfn(name: string, payload?: Model) {
+    const data = payload ? payload.encode() : null;
+    const args = msgpack.encode([6, name, data], true);
+    core.sendMessage(
+      this.socketId,
+      msgpack.encode([0, this.packageId, {}, args], true)
     );
   }
   rpc() {}

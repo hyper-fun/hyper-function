@@ -54,13 +54,13 @@ export class Package {
       this.hooks.beforeHfnHooks.push(middleware.beforeHfn);
     }
     if (middleware.afterHfn) {
-      this.hooks.afterHfnHooks.push(middleware.afterHfn);
+      this.hooks.afterHfnHooks.unshift(middleware.afterHfn);
     }
     if (middleware.beforeRpc) {
       this.hooks.beforeRpcHooks.push(middleware.beforeRpc);
     }
     if (middleware.afterRpc) {
-      this.hooks.afterRpcHooks.push(middleware.afterRpc);
+      this.hooks.afterRpcHooks.unshift(middleware.afterRpc);
     }
     if (middleware.onSetState) {
       this.hooks.onSetStateHooks.push(middleware.onSetState);

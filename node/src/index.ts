@@ -77,11 +77,12 @@ export function run(
 
   const pkgNames = packages.map((pkg) => pkg.name);
   const initArgs: any = {
-    dev: opts.dev,
-    addr: opts.addr,
+    dev: !!opts.dev,
     sdk: "node-" + pkgJson.version,
     pkg_names: pkgNames,
   };
+
+  if (opts.addr) initArgs.addr = opts.addr;
   if (opts.hfnConfigPath) initArgs.hfn_config_path = opts.hfnConfigPath;
 
   const result: InitResult = msgpack.decode(
